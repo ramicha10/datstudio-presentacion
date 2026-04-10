@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { ORACLE_INTERPRETER_SYSTEM } = require('./oracle_system');
 const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system');
-const pdfParse = require('pdf-parse');
+// pdf-parse removed — using pdfjs-dist directly (avoids DOMMatrix crash in serverless)
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const express    = require('express');
@@ -545,7 +545,22 @@ async function extractAttachmentText(token, messageId, attachmentId, mimeType, f
     // PDF
     if (mimeType === 'application/pdf' || fn.endsWith('.pdf')) {
       try {
-        const parsed = await pdfParse(buffer);
+        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+        const loadingTask = pdfjsLib.getDocument({
+          data: new Uint8Array(buffer),
+          useWorkerFetch: false,
+          isEvalSupported: false,
+          useSystemFonts: true,
+        });
+        const pdf = await loadingTask.promise;
+        const pageTexts = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          pageTexts.push(content.items.map(item => item.str || '').join(' '));
+        }
+        const parsed = { text: pageTexts.join('\n') };
         const texto = parsed.text?.replace(/\s+/g, ' ').trim() || '';
         if (texto.length > 50) {
           return { filename, tipo: 'PDF', texto: texto.slice(0, 5000) };
