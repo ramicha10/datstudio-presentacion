@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DatStudio · Premiar Caución</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{--ds-bg:#0D0F14;--ds-surface:#141720;--ds-border:#1E2230;--ds-oracle:#C8A96E;--ds-business:#4A8FD4;--ds-text:#E8EAF0;--ds-muted:#6B7080}
+    body{background:var(--ds-bg);color:var(--ds-text);font-family:'DM Sans',sans-serif;min-height:100vh}
+    .shell{display:flex;flex-direction:column;min-height:100vh}
+    .nav{display:flex;align-items:center;justify-content:space-between;padding:1.25rem 2rem;border-bottom:1px solid var(--ds-border)}
+    .logo{font-family:'Syne',sans-serif;font-weight:800;font-size:1.1rem;letter-spacing:.04em}
+    .logo span{color:var(--ds-oracle)}
+    .nav-right{display:flex;align-items:center;gap:.75rem}
+    .nav-name{font-size:.78rem;color:var(--ds-muted)}
+    .nav-avatar{width:32px;height:32px;border-radius:50%;background:var(--ds-border);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:500;color:var(--ds-muted);overflow:hidden}
+    .nav-logout{font-size:.72rem;color:var(--ds-muted);text-decoration:none;padding:.3rem .7rem;border:1px solid var(--ds-border);border-radius:999px;transition:color .2s}
+    .nav-logout:hover{color:var(--ds-text)}
+    .hero{padding:3rem 2rem 2rem;text-align:center}
+    .hero-title{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;line-height:1.15;margin-bottom:.75rem}
+    .hero-title .hi{color:var(--ds-oracle)}
+    .hero-sub{font-size:.95rem;color:var(--ds-muted);max-width:460px;margin:0 auto 2rem;line-height:1.65}
+    .mode-selector{display:grid;grid-template-columns:1fr 1fr;gap:1rem;padding:0 2rem 2rem;max-width:720px;margin:0 auto;width:100%}
+    .mode-card{border:1.5px solid var(--ds-border);border-radius:16px;padding:2rem 1.5rem;cursor:pointer;transition:all .25s;position:relative;overflow:hidden;background:var(--ds-surface)}
+    .mode-card::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;pointer-events:none}
+    .mode-card.oracle::before{background:radial-gradient(circle at 30% 30%,rgba(200,169,110,.12) 0%,transparent 70%)}
+    .mode-card.business::before{background:radial-gradient(circle at 30% 30%,rgba(74,143,212,.12) 0%,transparent 70%)}
+    .mode-card:hover::before,.mode-card.selected::before{opacity:1}
+    .mode-card.selected.oracle{border-color:var(--ds-oracle)}
+    .mode-card.selected.business{border-color:var(--ds-business)}
+    .mode-card:hover{transform:translateY(-2px)}
+    .mode-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:1.25rem;font-size:1.4rem}
+    .oracle .mode-icon{background:rgba(200,169,110,.12)}
+    .business .mode-icon{background:rgba(74,143,212,.12)}
+    .mode-label{font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:700;margin-bottom:.35rem}
+    .oracle .mode-label{color:var(--ds-oracle)}
+    .business .mode-label{color:var(--ds-business)}
+    .mode-desc{font-size:.8rem;color:var(--ds-muted);line-height:1.6}
+    .mode-badge{position:absolute;top:1rem;right:1rem;font-size:.65rem;font-weight:500;padding:.2rem .6rem;border-radius:999px}
+    .oracle .mode-badge{background:rgba(200,169,110,.15);color:var(--ds-oracle)}
+    .business .mode-badge{background:rgba(74,143,212,.15);color:var(--ds-business)}
+    .mode-features{margin-top:1.25rem;display:flex;flex-direction:column;gap:.4rem}
+    .mode-feat{font-size:.75rem;color:var(--ds-muted);display:flex;align-items:center;gap:.5rem}
+    .feat-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+    .oracle .feat-dot{background:var(--ds-oracle)}
+    .business .feat-dot{background:var(--ds-business)}
+    .cta-area{padding:0 2rem 1.5rem;display:flex;justify-content:center}
+    .cta-btn{padding:.75rem 2.5rem;border-radius:999px;font-family:'DM Sans',sans-serif;font-size:.9rem;font-weight:500;cursor:pointer;border:none;transition:all .2s;opacity:.4;pointer-events:none;background:var(--ds-border);color:var(--ds-muted)}
+    .cta-btn.ready-o{background:var(--ds-oracle);color:#1a1200;opacity:1;pointer-events:all}
+    .cta-btn.ready-b{background:var(--ds-business);color:#001a2e;opacity:1;pointer-events:all}
+    .cta-btn:hover{filter:brightness(1.1);transform:scale(1.02)}
+    .panel{margin:0 2rem 2rem;border:1px solid var(--ds-border);border-radius:16px;overflow:hidden;display:none}
+    .panel.visible{display:block}
+    .panel-header{padding:1rem 1.5rem;display:flex;align-items:center;gap:.75rem;border-bottom:1px solid var(--ds-border)}
+    .panel-header-o{background:rgba(200,169,110,.06)}
+    .panel-header-b{background:rgba(74,143,212,.06)}
+    .panel-title{font-family:'Syne',sans-serif;font-weight:700;font-size:.95rem}
+    .panel-title-o{color:var(--ds-oracle)}
+    .panel-title-b{color:var(--ds-business)}
+    .panel-status{margin-left:auto;font-size:.7rem;padding:.2rem .6rem;border-radius:999px;background:rgba(46,204,113,.1);color:#2ECC71}
+    .panel-body{padding:1.5rem;background:var(--ds-surface);display:flex;flex-direction:column;gap:1rem}
+    .chat-area{display:flex;flex-direction:column;gap:.75rem;min-height:200px;max-height:340px;overflow-y:auto;scroll-behavior:smooth}
+    .msg{display:flex;gap:.6rem;align-items:flex-start}
+    .msg-avatar{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:600;margin-top:2px}
+    .msg-avatar-ai-o{background:rgba(200,169,110,.2);color:var(--ds-oracle)}
+    .msg-avatar-ai-b{background:rgba(74,143,212,.2);color:var(--ds-business)}
+    .msg-avatar-user{background:var(--ds-border);color:var(--ds-muted)}
+    .msg-bubble{padding:.6rem .9rem;border-radius:10px;font-size:.82rem;line-height:1.65;max-width:86%}
+    .msg-bubble-ai{background:var(--ds-border);color:var(--ds-text)}
+    .msg-bubble-ai p{margin-bottom:.4rem}
+    .msg-bubble-ai p:last-child{margin-bottom:0}
+    .msg-bubble-ai strong{font-weight:500}
+    .msg-bubble-ai ul{padding-left:1rem;margin:.3rem 0}
+    .msg-bubble-ai li{margin-bottom:.2rem}
+    .msg-bubble-user-o{background:rgba(200,169,110,.12);color:var(--ds-text)}
+    .msg-bubble-user-b{background:rgba(74,143,212,.12);color:var(--ds-text)}
+    .input-row{display:flex;gap:.5rem}
+    .chat-input{flex:1;background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:8px;padding:.55rem .9rem;font-size:.82rem;color:var(--ds-text);outline:none;font-family:'DM Sans',sans-serif}
+    .chat-input::placeholder{color:var(--ds-muted)}
+    .send-btn{padding:.5rem 1.1rem;border-radius:8px;font-size:.78rem;font-weight:500;cursor:pointer;border:none;transition:all .2s}
+    .send-btn-o{background:var(--ds-oracle);color:#1a1200}
+    .send-btn-b{background:var(--ds-business);color:#001a2e}
+    .send-btn:hover{filter:brightness(1.1)}
+    .send-btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+    .quick-chips{display:flex;flex-wrap:wrap;gap:.4rem}
+    .chip{padding:.3rem .75rem;border-radius:999px;font-size:.72rem;cursor:pointer;border:1px solid var(--ds-border);color:var(--ds-muted);background:transparent;transition:all .2s;font-family:'DM Sans',sans-serif}
+    .chip:hover{color:var(--ds-text);border-color:var(--ds-muted)}
+    .typing-row{display:none;align-items:center;gap:.6rem}
+    .typing-row.show{display:flex}
+    .dots{display:flex;gap:4px;padding:.45rem .7rem;background:var(--ds-border);border-radius:10px}
+    .dot{width:5px;height:5px;border-radius:50%;animation:blink 1.2s infinite}
+    .dot:nth-child(2){animation-delay:.2s}
+    .dot:nth-child(3){animation-delay:.4s}
+    .dot-o{background:var(--ds-oracle)}
+    .dot-b{background:var(--ds-business)}
+    @keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+    .error-msg{font-size:.74rem;color:#E74C3C;padding:.4rem .75rem;background:rgba(231,76,60,.07);border-radius:6px;border:1px solid rgba(231,76,60,.18)}
+    .b-tab{padding:.35rem .9rem;border-radius:8px;font-size:.75rem;font-weight:500;cursor:pointer;border:1px solid var(--ds-border);background:transparent;color:var(--ds-muted);font-family:'DM Sans',sans-serif;transition:all .2s}
+    .b-tab.active-tab{background:rgba(74,143,212,.12);border-color:var(--ds-business);color:var(--ds-business)}
+    .agent-step{background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:8px;padding:.6rem .4rem;text-align:center;transition:all .3s}
+    .agent-step.procesando{border-color:var(--ds-business);background:rgba(74,143,212,.06)}
+    .agent-step.completo{border-color:#2ECC71;background:rgba(46,204,113,.06)}
+    .agent-icon{font-size:.85rem;margin-bottom:.2rem;color:var(--ds-muted)}
+    .agent-name{font-size:.7rem;font-weight:500;color:var(--ds-text);margin-bottom:.2rem}
+    .agent-status{font-size:.62rem;color:var(--ds-muted)}
+    .agent-step.procesando .agent-status{color:var(--ds-business)}
+    .agent-step.completo .agent-status{color:#2ECC71}
+    .footer{margin-top:auto;padding:1rem 2rem;border-top:1px solid var(--ds-border);display:flex;align-items:center;justify-content:space-between}
+    .footer-brand{font-size:.72rem;color:var(--ds-muted)}
+    .footer-brand span{color:var(--ds-oracle)}
+    .status-dot{width:6px;height:6px;border-radius:50%;background:#2ECC71;display:inline-block;margin-right:.4rem}
+    textarea.chat-input{resize:vertical;min-height:100px;line-height:1.55}
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <nav class="nav">
+    <div class="logo">DAT<span>STUDIO</span></div>
+    <div class="nav-right">
+      <span class="nav-name" id="nav-name"></span>
+      <div class="nav-avatar" id="nav-avatar">?</div>
+      <a href="/logout" class="nav-logout">Salir</a>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <h1 class="hero-title">Todo tu universo a una<br><span class="hi">pregunta de distancia.</span></h1>
+    <p class="hero-sub">Consultá tu cartera, analizá correos y gestioná casos desde un único lugar. Elegí el módulo que necesitás.</p>
+  </div>
+
+  <div class="mode-selector">
+    <div class="mode-card oracle" id="card-oracle" onclick="selectMode('oracle')">
+      <div class="mode-badge">Análisis</div>
+      <div class="mode-icon">◈</div>
+      <div class="mode-label">ORACLE</div>
+      <p class="mode-desc">Consultá tu cartera, calculá primas, proyectá producción y generá dashboards interactivos.</p>
+      <div class="mode-features">
+        <div class="mode-feat"><div class="feat-dot"></div><span>Consultas sobre pólizas y cartera</span></div>
+        <div class="mode-feat"><div class="feat-dot"></div><span>Dashboards y estadísticas</span></div>
+        <div class="mode-feat"><div class="feat-dot"></div><span>Proyecciones y escenarios</span></div>
+        <div class="mode-feat"><div class="feat-dot"></div><span>Cálculo de primas y comisiones</span></div>
+      </div>
+    </div>
+    <div class="mode-card business" id="card-business" onclick="selectMode('business')">
+      <div class="mode-badge">Gestión</div>
+      <div class="mode-icon">⬡</div>
+      <div class="mode-label">BUSINESS</div>
+      <p class="mode-desc">Analizá correos, procesá casos, gestioná siniestros y coordiná tu equipo con agentes especializados.</p>
+      <div class="mode-features">
+        <div class="mode-feat"><div class="feat-dot"></div><span>Lectura y análisis de mails</span></div>
+        <div class="mode-feat"><div class="feat-dot"></div><span>Procesamiento de casos</span></div>
+        <div class="mode-feat"><div class="feat-dot"></div><span>Gestión de siniestros</span></div>
+        <div class="mode-feat"><div class="feat-dot"></div><span>Equipo de 4 agentes IA</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta-area">
+    <button class="cta-btn" id="cta-main" onclick="openPanel()">Seleccioná un módulo</button>
+  </div>
+
+  <!-- ORACLE PANEL -->
+  <div class="panel" id="panel-oracle">
+    <div class="panel-header panel-header-o">
+      <span style="font-size:1rem">◈</span>
+      <span class="panel-title panel-title-o">Oracle — Asistente de Caución</span>
+      <span class="panel-status">activo</span>
+    </div>
+    <div class="panel-body">
+      <div class="quick-chips">
+        <button class="chip" onclick="sendChip('oracle','Cuantas polizas activas tengo hoy?')">Pólizas activas</button>
+        <button class="chip" onclick="sendChip('oracle','Que campo debo usar para medir produccion en Soter?')">Campo producción</button>
+        <button class="chip" onclick="sendChip('oracle','Que polizas vencen en los proximos 30 dias?')">Próximos vencimientos</button>
+        <button class="chip" onclick="sendChip('oracle','Mostrame la produccion del mes por ejecutivo')">Producción por ejecutivo</button>
+        <button class="chip" onclick="sendChip('oracle','Cual es el proceso de siniestro para una garantia publica?')">Siniestro público</button>
+      </div>
+      <div class="chat-area" id="chat-oracle">
+        <div class="msg">
+          <div class="msg-avatar msg-avatar-ai-o">O</div>
+          <div class="msg-bubble msg-bubble-ai">Hola, soy tu asistente Oracle de caución. Podés preguntarme sobre pólizas, producción, primas, vencimientos, siniestros o cualquier tema del ramo. ¿Qué necesitás?</div>
+        </div>
+      </div>
+      <div class="typing-row" id="typing-oracle">
+        <div class="msg-avatar msg-avatar-ai-o">O</div>
+        <div class="dots"><div class="dot dot-o"></div><div class="dot dot-o"></div><div class="dot dot-o"></div></div>
+      </div>
+      <div id="error-oracle"></div>
+      <div class="input-row">
+        <input class="chat-input" id="input-oracle" placeholder="Preguntá sobre tu cartera..." onkeydown="if(event.key==='Enter')sendMsg('oracle')">
+        <button class="send-btn send-btn-o" id="btn-oracle" onclick="sendMsg('oracle')">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUSINESS PANEL -->
+  <div class="panel" id="panel-business">
+    <div class="panel-header panel-header-b">
+      <span style="font-size:1rem">⬡</span>
+      <span class="panel-title panel-title-b">Business — Equipo de Agentes</span>
+      <span class="panel-status">activo</span>
+    </div>
+    <div class="panel-body">
+      <div style="display:flex;gap:.5rem;margin-bottom:.25rem">
+        <button class="b-tab active-tab" id="tab-paste" onclick="switchTab('paste')">Pegar correo / caso</button>
+        <button class="b-tab" id="tab-gmail" onclick="switchTab('gmail')">Buscar en Gmail</button>
+      </div>
+      <div id="section-paste">
+        <div class="quick-chips" style="margin-bottom:.6rem">
+          <button class="chip" onclick="setDemo('siniestro')">Ejemplo siniestro</button>
+          <button class="chip" onclick="setDemo('ejecucion')">Ejemplo ejecución</button>
+          <button class="chip" onclick="setDemo('emision')">Ejemplo emisión</button>
+        </div>
+        <textarea class="chat-input" id="caso-input" placeholder="Pegá aquí el correo o describí el caso a analizar..."></textarea>
+        <button class="send-btn send-btn-b" id="btn-analizar" onclick="analizarCaso()" style="margin-top:.5rem;width:100%;padding:.7rem">Analizar con los 4 agentes</button>
+      </div>
+      <div id="section-gmail" style="display:none">
+        <div class="input-row">
+          <input class="chat-input" id="gmail-query" placeholder="Buscar en Gmail (ej: siniestro, ejecución...)">
+          <button class="send-btn send-btn-b" id="btn-gmail" onclick="buscarGmail()">Buscar</button>
+        </div>
+        <div id="gmail-results" style="margin-top:.5rem;display:flex;flex-direction:column;gap:.4rem;max-height:180px;overflow-y:auto"></div>
+      </div>
+      <div id="pipeline" style="display:none">
+        <div style="font-size:.7rem;color:var(--ds-muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.06em">Pipeline</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem">
+          <div class="agent-step" id="step-Router"><div class="agent-icon">①</div><div class="agent-name">Router</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Tecnico"><div class="agent-icon">②</div><div class="agent-name">Técnico</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Operativo"><div class="agent-icon">③</div><div class="agent-name">Operativo</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Validador"><div class="agent-icon">④</div><div class="agent-name">Validador</div><div class="agent-status">esperando</div></div>
+        </div>
+      </div>
+      <div id="resultado-business" style="display:none;background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:10px;padding:1rem;font-size:.82rem;line-height:1.65;max-height:340px;overflow-y:auto"></div>
+      <div id="error-business"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-brand">DAT<span>STUDIO</span> · Premiar Caución</div>
+    <div style="font-size:.72rem;color:var(--ds-muted)"><span class="status-dot"></span>Sistemas operativos</div>
+  </div>
+
+</div>
+<script>
+// ─── Usuario ─────────────────────────────────────────────────────────────────
+fetch('/api/me').then(r=>r.json()).then(u=>{
+  document.getElementById('nav-name').textContent = u.name.split(' ')[0];
+  const av = document.getElementById('nav-avatar');
+  if(u.avatar){ av.innerHTML='<img src="'+u.avatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">'; }
+  else{ av.textContent=u.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+}).catch(()=>{});
+
+// ─── Estado ──────────────────────────────────────────────────────────────────
+var currentMode = null;
+var oracleHistory = [];
+var oracleLoading = false;
+
+// ─── Navegación ──────────────────────────────────────────────────────────────
+function selectMode(mode){
+  currentMode = mode;
+  document.getElementById('card-oracle').classList.remove('selected');
+  document.getElementById('card-business').classList.remove('selected');
+  document.getElementById('card-'+mode).classList.add('selected');
+  var cta = document.getElementById('cta-main');
+  cta.textContent = mode==='oracle' ? 'Ingresar a Oracle' : 'Ingresar a Business';
+  cta.className = 'cta-btn '+(mode==='oracle'?'ready-o':'ready-b');
+}
+
+function openPanel(){
+  if(!currentMode) return;
+  document.getElementById('panel-oracle').classList.remove('visible');
+  document.getElementById('panel-business').classList.remove('visible');
+  document.getElementById('panel-'+currentMode).classList.add('visible');
+  setTimeout(function(){ document.getElementById('panel-'+currentMode).scrollIntoView({behavior:'smooth',block:'start'}); },50);
+}
+
+// ─── Oracle ───────────────────────────────────────────────────────────────────
+function sendChip(mode, text){
+  selectMode(mode);
+  openPanel();
+  setTimeout(function(){
+    if(mode==='oracle'){ document.getElementById('input-oracle').value=text; sendMsg('oracle'); }
+  },200);
+}
+
+function escHtml(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderMd(text){
+  var t = escHtml(text);
+  t = t.replace(/\*\*([\s\S]*?)\*\*/g,'<strong>$1</strong>');
+  var lines = t.split('\n');
+  var out='', inUl=false;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    if(/^[-•]\s/.test(line)){
+      if(!inUl){out+='<ul>';inUl=true;}
+      out+='<li>'+line.replace(/^[-•]\s/,'')+'</li>';
+    } else {
+      if(inUl){out+='</ul>';inUl=false;}
+      if(line.trim()) out+='<p>'+line+'</p>';
+    }
+  }
+  if(inUl) out+='</ul>';
+  return out;
+}
+
+function appendMsg(mode, role, text){
+  var chat = document.getElementById('chat-'+mode);
+  var div = document.createElement('div');
+  div.className='msg';
+  if(role==='user'){
+    div.style.justifyContent='flex-end';
+    var cls = mode==='oracle'?'msg-bubble-user-o':'msg-bubble-user-b';
+    div.innerHTML='<div class="msg-bubble '+cls+'">'+escHtml(text)+'</div><div class="msg-avatar msg-avatar-user">PR</div>';
+  } else {
+    var ac = mode==='oracle'?'msg-avatar-ai-o':'msg-avatar-ai-b';
+    var lt = mode==='oracle'?'O':'B';
+    div.innerHTML='<div class="msg-avatar '+ac+'">'+lt+'</div><div class="msg-bubble msg-bubble-ai">'+renderMd(text)+'</div>';
+  }
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function setOracleLoading(val){
+  oracleLoading=val;
+  document.getElementById('typing-oracle').classList.toggle('show',val);
+  document.getElementById('btn-oracle').disabled=val;
+  document.getElementById('input-oracle').disabled=val;
+}
+
+async function sendMsg(mode){
+  if(oracleLoading) return;
+  var input = document.getElementById('input-'+mode);
+  var text = input.value.trim();
+  if(!text) return;
+  input.value='';
+  appendMsg(mode,'user',text);
+  oracleHistory.push({role:'user',content:text});
+  setOracleLoading(true);
+  document.getElementById('error-oracle').innerHTML='';
+  try {
+    var res = await fetch('/api/oracle',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({max_tokens:1000,messages:oracleHistory})
+    });
+    var data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Error '+res.status);
+    var reply = (data.content||[]).find(function(b){return b.type==='text';});
+    reply = reply ? reply.text : 'Sin respuesta.';
+    oracleHistory.push({role:'assistant',content:reply});
+    setOracleLoading(false);
+    appendMsg(mode,'assistant',reply);
+  } catch(err){
+    oracleHistory.pop();
+    setOracleLoading(false);
+    document.getElementById('error-oracle').innerHTML='<div class="error-msg">'+escHtml(err.message)+'</div>';
+  }
+}
+
+// ─── Business — tabs ─────────────────────────────────────────────────────────
+function switchTab(tab){
+  document.getElementById('section-paste').style.display=tab==='paste'?'block':'none';
+  document.getElementById('section-gmail').style.display=tab==='gmail'?'block':'none';
+  document.getElementById('tab-paste').className='b-tab'+(tab==='paste'?' active-tab':'');
+  document.getElementById('tab-gmail').className='b-tab'+(tab==='gmail'?' active-tab':'');
+}
+
+var DEMOS = {
+  siniestro: 'De: municipalidad@rafaela.gob.ar\nPara: siniestros@premiar.seg.ar\nAsunto: Denuncia de siniestro - Poliza 00045821\n\nEstimados, por medio de la presente denunciamos el siniestro correspondiente a la poliza de Caucion N 00045821, siendo el tomador la empresa Constructora Del Valle SA. La empresa incumplio con la ejecucion de la obra de pavimentacion conforme al contrato N 234/2024. Adjuntamos acta de constatacion y resolucion del HCD que establece la responsabilidad del contratista.',
+  ejecucion: 'De: legal@grupoinversion.com.ar\nPara: caucion@premiar.seg.ar\nAsunto: Poliza 00038754 - Intimacion de pago\n\nPremiar Caucion, en relacion a la poliza N 00038754 (Garantia de Cumplimiento de Contrato Privado), les comunicamos que el tomador Servicios Industriales SA no ha cumplido con las obligaciones contractuales. Con fecha 10/02/2026 se curso intimacion fehaciente al tomador otorgandole 15 dias habiles. Vencido dicho plazo sin respuesta, procedemos a ejecutar la garantia por USD 85.000.',
+  emision: 'De: martinez.hugo@productores.com\nPara: emision@premiar.seg.ar\nAsunto: Solicitud nueva poliza - Garantia de Oferta Licitacion ENRE\n\nBuen dia, solicito emision para: Tomador: Electrotecnica Patagonica SA - CUIT 30-71234567-9. Tipo: Garantia de Mantenimiento de Oferta. Beneficiario: ENRE. Licitacion: Expediente ENRE N 2847/2026. Suma Asegurada: $12.500.000. Vigencia: 90 dias desde 01/04/2026. El cliente tiene carpeta aprobada con ustedes.'
+};
+
+function setDemo(tipo){
+  document.getElementById('caso-input').value = DEMOS[tipo]||'';
+}
+
+// ─── Business — pipeline ─────────────────────────────────────────────────────
+function setAgentStatus(name, status){
+  var el = document.getElementById('step-'+name);
+  if(!el) return;
+  el.className='agent-step '+status;
+  el.querySelector('.agent-status').textContent = status==='procesando'?'procesando...':status==='completo'?'listo':'esperando';
+}
+
+function renderResultado(text){
+  var t = escHtml(text);
+  t = t.replace(/\*\*([\s\S]*?)\*\*/g,'<strong>$1</strong>');
+  t = t.replace(/\n\n/g,'</p><p>');
+  t = t.replace(/\n/g,'<br>');
+  return '<p>'+t+'</p>';
+}
+
+async function analizarCaso(){
+  var caso = document.getElementById('caso-input').value.trim();
+  if(!caso) return;
+  var btn = document.getElementById('btn-analizar');
+  var pipeline = document.getElementById('pipeline');
+  var resultado = document.getElementById('resultado-business');
+  var errorEl = document.getElementById('error-business');
+  btn.disabled=true; btn.textContent='Analizando...';
+  pipeline.style.display='block';
+  resultado.style.display='none';
+  errorEl.innerHTML='';
+  ['Router','Tecnico','Operativo','Validador'].forEach(function(a){ setAgentStatus(a,'esperando'); });
+  try {
+    var res = await fetch('/api/business',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({caso:caso})
+    });
+    var reader = res.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer='';
+    while(true){
+      var chunk = await reader.read();
+      if(chunk.done) break;
+      buffer += decoder.decode(chunk.value,{stream:true});
+      var parts = buffer.split('\n\n');
+      buffer = parts.pop();
+      for(var i=0;i<parts.length;i++){
+        var block = parts[i];
+        var evMatch = block.match(/^event: (.+)/m);
+        var dataMatch = block.match(/^data: (.+)/m);
+        if(!evMatch||!dataMatch) continue;
+        var ev = evMatch[1].trim();
+        try {
+          var d = JSON.parse(dataMatch[1]);
+          if(ev==='progress'){ setAgentStatus(d.agente, d.estado); }
+          else if(ev==='done'){ resultado.innerHTML=renderResultado(d.resultado); resultado.style.display='block'; resultado.scrollIntoView({behavior:'smooth',block:'start'}); }
+          else if(ev==='error'){ errorEl.innerHTML='<div class="error-msg">'+escHtml(d.mensaje)+'</div>'; }
+        } catch(e){}
+      }
+    }
+  } catch(err){
+    errorEl.innerHTML='<div class="error-msg">'+escHtml(err.message)+'</div>';
+  } finally {
+    btn.disabled=false; btn.textContent='Analizar con los 4 agentes';
+  }
+}
+
+async function buscarGmail(){
+  var q = document.getElementById('gmail-query').value.trim();
+  if(!q) q = 'to:pedidos@premiar.seg.ar is:unread';
+  var resultsEl = document.getElementById('gmail-results');
+  var btn = document.getElementById('btn-gmail');
+  btn.disabled=true; btn.textContent='Buscando...';
+  resultsEl.innerHTML='<div style="font-size:.78rem;color:var(--ds-muted);padding:.4rem 0">Buscando en Gmail...</div>';
+  try {
+    var res = await fetch('/api/gmail/search?q='+encodeURIComponent(q)+'&max=15');
+    var data = await res.json();
+    if(!res.ok) throw new Error(data.error||'Error');
+    var emails = data.emails || data.messages || [];
+    if(!emails.length){ resultsEl.innerHTML='<div style="font-size:.78rem;color:var(--ds-muted)">No se encontraron correos.</div>'; return; }
+    resultsEl.innerHTML = emails.map(function(m){
+      var mid = m.id || m.messageId || '';
+      var from = escHtml(m.from_name || m.from || '');
+      var subj = escHtml(m.subject || '(sin asunto)');
+      var date = escHtml(m.date || '');
+      var snip = escHtml(m.snippet || '');
+      return '<div style="background:var(--ds-bg);border:1px solid var(--ds-border);border-radius:8px;padding:.6rem .9rem;cursor:pointer;margin-bottom:.3rem" onclick="cargarMailId(&quot;'+mid+'&quot;)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+        '<div style="font-size:.75rem;font-weight:500;color:var(--ds-text)">'+from+'</div>' +
+        '<div style="font-size:.65rem;color:var(--ds-muted)">'+date+'</div></div>' +
+        '<div style="font-size:.73rem;color:var(--ds-business);margin:.15rem 0">'+subj+'</div>' +
+        '<div style="font-size:.7rem;color:var(--ds-muted)">'+snip+'</div></div>';
+    }).join('');
+  } catch(err){
+    resultsEl.innerHTML='<div class="error-msg">'+escHtml(err.message)+'</div>';
+  } finally {
+    btn.disabled=false; btn.textContent='Buscar';
+  }
+}
+
+async function cargarMailId(id){
+  if(!id){ return; }
+  switchTab('paste');
+  // Bloquear el botón Analizar mientras cargan los adjuntos
+  var btnAnalizar = document.getElementById('btn-analizar');
+  btnAnalizar.disabled = true;
+  btnAnalizar.textContent = 'Cargando adjuntos...';
+  document.getElementById('caso-input').value = 'Cargando correo y adjuntos...';
+  try {
+    var res = await fetch('/api/gmail/message/'+id);
+    var data = await res.json();
+    var texto = 'De: '+(data.from_name||data.from||'')+
+      '\nPara: '+(data.to||'')+
+      '\nAsunto: '+(data.subject||'')+
+      '\nFecha: '+(data.date||'')+
+      '\n\n'+(data.body||data.snippet||'');
+    // Agregar contenido de adjuntos
+    if(data.adjuntos && data.adjuntos.length > 0){
+      texto += '\n\n--- ADJUNTOS ---';
+      data.adjuntos.forEach(function(adj){
+        texto += '\n\n[' + adj.tipo + ': ' + adj.filename + ']\n' + (adj.texto || '');
+      });
+    }
+    document.getElementById('caso-input').value = texto;
+  } catch(err){
+    document.getElementById('caso-input').value = 'Error al cargar el correo: '+err.message;
+  } finally {
+    // Rehabilitar el botón solo cuando todo esté listo
+    btnAnalizar.disabled = false;
+    btnAnalizar.textContent = 'Analizar con los 4 agentes';
+  }
+}
+
+function cargarMail(el){
+  switchTab('paste');
+  document.getElementById('caso-input').value = el.dataset.body||'';
+}
+</script>
+</body>
+</html>
