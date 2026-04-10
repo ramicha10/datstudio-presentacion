@@ -22,6 +22,9 @@ if (missing.length) { console.error('Faltan variables en .env:', missing.join(',
 const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || null;
 
 // ─── Pools de BD ──────────────────────────────────────────────────────────────
+// ─── Pools de BD ──────────────────────────────────────────────────────────────
+// ─── Pools de BD ──────────────────────────────────────────────────────────────
+
 const soter    = new Pool({ connectionString: process.env.SOTER_DB_URL,    ssl: { rejectUnauthorized: false } });
 const poseidon = new Pool({ connectionString: process.env.POSEIDON_DB_URL, ssl: { rejectUnauthorized: false } });
 const hermes   = new Pool({ connectionString: process.env.HERMES_DB_URL,   ssl: { rejectUnauthorized: false } });
