@@ -6,6 +6,7 @@ const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const express    = require('express');
 const session    = require('express-session');
+const PgSession  = require('connect-pg-simple')(session);
 const passport   = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { Pool }   = require('pg');
@@ -46,6 +47,7 @@ passport.deserializeUser((user, done) => done(null, user));
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(session({
+  store: new PgSession({ pool: hermes, tableName: 'sessions', createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
   cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }
 }));
