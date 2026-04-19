@@ -3,115 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DatStudio · Acceso</title>
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <title>Premiar · Acceso</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     :root{
-      --bg:#0D0F14;
-      --surface:#141720;
-      --border:#1E2230;
-      --accent:#C8A96E;
-      --text:#E8EAF0;
-      --muted:#6B7080;
+      --bg:#F4F4F6;--surface:#FFFFFF;--border:#E4E4EC;
+      --primary:#7C75D8;--primary-hover:#6A63C4;
+      --text:#1A1A2E;--secondary:#6B6B80;--muted:#9B9BAA;
     }
-    body{
-      background:var(--bg);
-      color:var(--text);
-      font-family:'DM Sans',sans-serif;
-      min-height:100vh;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-
-    .card{
-      background:var(--surface);
-      border:1px solid var(--border);
-      border-radius:20px;
-      padding:3rem 2.5rem;
-      width:100%;
-      max-width:400px;
-      text-align:center;
-    }
-
-    .logo{
-      font-family:'Syne',sans-serif;
-      font-weight:800;
-      font-size:1.4rem;
-      letter-spacing:.05em;
-      margin-bottom:.5rem;
-    }
-    .logo span{color:var(--accent)}
-
-    .divider{
-      width:32px;
-      height:2px;
-      background:var(--accent);
-      margin:.75rem auto 1.75rem;
-      border-radius:2px;
-    }
-
-    h1{
-      font-family:'Syne',sans-serif;
-      font-size:1.5rem;
-      font-weight:800;
-      line-height:1.2;
-      margin-bottom:.6rem;
-    }
-    h1 em{color:var(--accent);font-style:normal}
-
-    .sub{
-      font-size:.85rem;
-      color:var(--muted);
-      line-height:1.6;
-      margin-bottom:2rem;
-    }
-
-    .btn-google{
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:.75rem;
-      width:100%;
-      padding:.85rem 1.5rem;
-      border-radius:12px;
-      background:#fff;
-      color:#1a1a1a;
-      font-family:'DM Sans',sans-serif;
-      font-size:.9rem;
-      font-weight:500;
-      text-decoration:none;
-      transition:all .2s;
-      border:none;
-      cursor:pointer;
-    }
-    .btn-google:hover{background:#f0f0f0;transform:translateY(-1px)}
+    body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:40px 32px;width:100%;max-width:380px;text-align:center}
+    .logo{margin-bottom:24px}
+    .logo img{height:40px;display:block;margin:0 auto}
+    .divider{width:32px;height:2px;background:var(--primary);margin:0 auto 28px;border-radius:2px}
+    h1{font-size:18px;font-weight:500;line-height:1.35;margin-bottom:8px;color:var(--text)}
+    h1 em{color:var(--primary);font-style:normal}
+    .sub{font-size:13px;color:var(--secondary);line-height:1.7;margin-bottom:28px}
+    .btn-google{display:flex;align-items:center;justify-content:center;gap:.75rem;width:100%;padding:10px 18px;border-radius:8px;background:var(--text);color:#fff;font-family:inherit;font-size:13px;font-weight:500;text-decoration:none;transition:background .15s,transform .15s;border:none;cursor:pointer}
+    .btn-google:hover{background:#2a2a4a;transform:translateY(-1px)}
     .btn-google:active{transform:scale(.98)}
-
     .google-icon{width:18px;height:18px;flex-shrink:0}
-
-    .error{
-      margin-bottom:1.25rem;
-      padding:.6rem 1rem;
-      background:rgba(231,76,60,.08);
-      border:1px solid rgba(231,76,60,.2);
-      border-radius:8px;
-      font-size:.8rem;
-      color:#E74C3C;
-    }
-
-    .footer-note{
-      margin-top:1.75rem;
-      font-size:.72rem;
-      color:var(--muted);
-      line-height:1.6;
-    }
+    .error{margin-bottom:20px;padding:10px 16px;background:rgba(217,64,64,.06);border:1px solid rgba(217,64,64,.18);border-radius:8px;font-size:13px;color:#D94040}
+    .footer-note{margin-top:20px;font-size:12px;color:var(--muted);line-height:1.6}
   </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">DAT<span>STUDIO</span></div>
+  <div class="logo"><img src="/logo_premiar.png" alt="Premiar Caución"></div>
   <div class="divider"></div>
 
   <h1>Todo tu universo a una<br><em>pregunta de distancia.</em></h1>
