@@ -351,25 +351,28 @@ app.post('/api/business', requireAuth, async (req, res) => {
   try {
     const casoTruncado = caso.slice(0, 12000); // max 12K chars por caso
 
-    send('progress', { agente: 'Router', estado: 'procesando' });
+    send('progress', { agente: 'Premiar', estado: 'procesando' });
     const routerOut = await callAgent(BUSINESS_AGENTS.router,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
     try { clasificacion = JSON.parse((routerOut.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch(e) { clasificacion = { resumen: routerOut }; }
-    send('progress', { agente: 'Router', estado: 'completo', data: clasificacion });
+    const resumenRouter = clasificacion.resumen
+      ? `Tipo: ${clasificacion.tipo || '—'} | Urgencia: ${clasificacion.urgencia || '—'}\n${clasificacion.resumen}`
+      : routerOut;
+    send('progress', { agente: 'Premiar', estado: 'completo', output: resumenRouter });
 
-    send('progress', { agente: 'Tecnico', estado: 'procesando' });
+    send('progress', { agente: 'Suscriptor', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2), 800);
-    send('progress', { agente: 'Tecnico', estado: 'completo' });
+    send('progress', { agente: 'Suscriptor', estado: 'completo', output: tecnicoOut });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n=== ANALISIS TECNICO ===\n' + tecnicoOut, 1000);
-    send('progress', { agente: 'Operativo', estado: 'completo' });
+    send('progress', { agente: 'Operativo', estado: 'completo', output: operativoOut });
 
     send('progress', { agente: 'Validador', estado: 'procesando' });
     const validadorOut = await callAgent(BUSINESS_AGENTS.validador,
@@ -377,7 +380,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '\n\n=== ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n=== TECNICO ===\n' + tecnicoOut +
       '\n\n=== OPERATIVO ===\n' + operativoOut, 1500);
-    send('progress', { agente: 'Validador', estado: 'completo' });
+    send('progress', { agente: 'Validador', estado: 'completo', output: validadorOut });
 
     send('done', { resultado: validadorOut, clasificacion });
     res.end();
@@ -689,5 +692,5 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
   console.log(`DatStudio en http://localhost:${PORT}`);
-  if (ALLOWED_DOMAIN) console.log(`Dominio permitido: @${ALLOWED_DOMAIN}`);
+  if (process.env.ALLOWED_DOMAIN) console.log(`Dominio permitido: @${process.env.ALLOWED_DOMAIN}`);
 });

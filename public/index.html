@@ -236,13 +236,13 @@
       <div id="pipeline" style="display:none">
         <div style="font-size:11px;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.06em">Pipeline</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem">
-          <div class="agent-step" id="step-Router"><div class="agent-icon">①</div><div class="agent-name">Router</div><div class="agent-status">esperando</div></div>
-          <div class="agent-step" id="step-Tecnico"><div class="agent-icon">②</div><div class="agent-name">Técnico</div><div class="agent-status">esperando</div></div>
-          <div class="agent-step" id="step-Operativo"><div class="agent-icon">③</div><div class="agent-name">Operativo</div><div class="agent-status">esperando</div></div>
-          <div class="agent-step" id="step-Validador"><div class="agent-icon">④</div><div class="agent-name">Validador</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Premiar"><div class="agent-icon">①</div><div class="agent-name">Asistente Premiar</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Suscriptor"><div class="agent-icon">②</div><div class="agent-name">Asistente Suscriptor</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Operativo"><div class="agent-icon">③</div><div class="agent-name">Asistente Operador / Comercial</div><div class="agent-status">esperando</div></div>
+          <div class="agent-step" id="step-Validador"><div class="agent-icon">④</div><div class="agent-name">Asistente Validador</div><div class="agent-status">esperando</div></div>
         </div>
       </div>
-      <div id="resultado-business" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:1rem;font-size:13px;line-height:1.65;max-height:340px;overflow-y:auto"></div>
+      <div id="chat-business" style="display:none;flex-direction:column;gap:.75rem;max-height:420px;overflow-y:auto;scroll-behavior:smooth;padding:.25rem 0"></div>
       <div id="error-business"></div>
     </div>
   </div>
@@ -389,6 +389,14 @@ function setDemo(tipo){
 }
 
 // ─── Business — pipeline ─────────────────────────────────────────────────────
+var AGENT_LABELS = {
+  Premiar: 'Asistente Premiar',
+  Suscriptor: 'Asistente Suscriptor',
+  Operativo: 'Asistente Operador / Comercial',
+  Validador: 'Asistente Validador'
+};
+var AGENT_INITIALS = { Premiar:'AP', Suscriptor:'AS', Operativo:'AO', Validador:'AV' };
+
 function setAgentStatus(name, status){
   var el = document.getElementById('step-'+name);
   if(!el) return;
@@ -396,12 +404,20 @@ function setAgentStatus(name, status){
   el.querySelector('.agent-status').textContent = status==='procesando'?'procesando...':status==='completo'?'listo':'esperando';
 }
 
-function renderResultado(text){
-  var t = escHtml(text);
-  t = t.replace(/\*\*([\s\S]*?)\*\*/g,'<strong>$1</strong>');
-  t = t.replace(/\n\n/g,'</p><p>');
-  t = t.replace(/\n/g,'<br>');
-  return '<p>'+t+'</p>';
+function appendAgentMsg(agente, text){
+  var chat = document.getElementById('chat-business');
+  chat.style.display='flex';
+  var label = AGENT_LABELS[agente] || agente;
+  var initials = AGENT_INITIALS[agente] || agente.slice(0,2).toUpperCase();
+  var div = document.createElement('div');
+  div.className='msg';
+  div.innerHTML='<div class="msg-avatar msg-avatar-ai-b" style="min-width:26px">'+initials+'</div>'+
+    '<div style="display:flex;flex-direction:column;gap:3px;max-width:86%">'+
+    '<span style="font-size:11px;color:var(--business);font-weight:500;padding-left:2px">'+escHtml(label)+'</span>'+
+    '<div class="msg-bubble msg-bubble-ai">'+renderMd(text)+'</div>'+
+    '</div>';
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
 }
 
 async function analizarCaso(){
@@ -409,13 +425,14 @@ async function analizarCaso(){
   if(!caso) return;
   var btn = document.getElementById('btn-analizar');
   var pipeline = document.getElementById('pipeline');
-  var resultado = document.getElementById('resultado-business');
+  var chatEl = document.getElementById('chat-business');
   var errorEl = document.getElementById('error-business');
   btn.disabled=true; btn.textContent='Analizando...';
   pipeline.style.display='block';
-  resultado.style.display='none';
+  chatEl.style.display='none';
+  chatEl.innerHTML='';
   errorEl.innerHTML='';
-  ['Router','Tecnico','Operativo','Validador'].forEach(function(a){ setAgentStatus(a,'esperando'); });
+  ['Premiar','Suscriptor','Operativo','Validador'].forEach(function(a){ setAgentStatus(a,'esperando'); });
   try {
     var res = await fetch('/api/business',{
       method:'POST',
@@ -439,9 +456,12 @@ async function analizarCaso(){
         var ev = evMatch[1].trim();
         try {
           var d = JSON.parse(dataMatch[1]);
-          if(ev==='progress'){ setAgentStatus(d.agente, d.estado); }
-          else if(ev==='done'){ resultado.innerHTML=renderResultado(d.resultado); resultado.style.display='block'; resultado.scrollIntoView({behavior:'smooth',block:'start'}); }
-          else if(ev==='error'){ errorEl.innerHTML='<div class="error-msg">'+escHtml(d.mensaje)+'</div>'; }
+          if(ev==='progress'){
+            setAgentStatus(d.agente, d.estado);
+            if(d.estado==='completo' && d.output){
+              appendAgentMsg(d.agente, d.output);
+            }
+          } else if(ev==='error'){ errorEl.innerHTML='<div class="error-msg">'+escHtml(d.mensaje)+'</div>'; }
         } catch(e){}
       }
     }
