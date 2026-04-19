@@ -5,32 +5,76 @@ const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system')
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const express    = require('express');
+const session    = require('express-session');
+const passport   = require('passport');
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { Pool }   = require('pg');
 const path       = require('path');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
+const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || null;
 
 // ─── Validaciones ─────────────────────────────────────────────────────────────
-const REQUIRED = ['ANTHROPIC_API_KEY','SOTER_DB_URL','POSEIDON_DB_URL','HERMES_DB_URL'];
+const REQUIRED = ['ANTHROPIC_API_KEY','GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','SESSION_SECRET','SOTER_DB_URL','POSEIDON_DB_URL','HERMES_DB_URL'];
 const missing  = REQUIRED.filter(k => !process.env[k]);
 if (missing.length) { console.error('Faltan variables en .env:', missing.join(', ')); process.exit(1); }
 
 // ─── Pools de BD ──────────────────────────────────────────────────────────────
-// ─── Pools de BD ──────────────────────────────────────────────────────────────
-// ─── Pools de BD ──────────────────────────────────────────────────────────────
-
 const soter    = new Pool({ connectionString: process.env.SOTER_DB_URL,    ssl: { rejectUnauthorized: false } });
 const poseidon = new Pool({ connectionString: process.env.POSEIDON_DB_URL, ssl: { rejectUnauthorized: false } });
 const hermes   = new Pool({ connectionString: process.env.HERMES_DB_URL,   ssl: { rejectUnauthorized: false } });
 
+// ─── Google OAuth ─────────────────────────────────────────────────────────────
+passport.use(new GoogleStrategy({
+  clientID:     process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL:  process.env.BASE_URL
+    ? `${process.env.BASE_URL}/auth/google/callback`
+    : `http://localhost:${PORT}/auth/google/callback`
+}, (accessToken, refreshToken, profile, done) => {
+  const email = profile.emails?.[0]?.value || '';
+  if (ALLOWED_DOMAIN && !email.endsWith('@' + ALLOWED_DOMAIN)) {
+    return done(null, false);
+  }
+  return done(null, { id: profile.id, name: profile.displayName, email, avatar: profile.photos?.[0]?.value || null, accessToken });
+}));
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
+  cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
-function requireAuth(req, res, next) { return next(); }
+function requireAuth(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'No autenticado' });
+  res.redirect('/login');
+}
 
-app.get('/api/me', (req, res) => {
-  res.json({ name: 'Demo', email: 'demo@premiar.seg.ar', avatar: null });
+// ─── Auth routes ──────────────────────────────────────────────────────────────
+app.get('/login', (req, res) => {
+  if (req.isAuthenticated()) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+app.get('/auth/google', passport.authenticate('google', {
+  scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.readonly'],
+  accessType: 'online'
+}));
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/login?error=1' }),
+  (req, res) => res.redirect('/')
+);
+app.get('/logout', (req, res) => req.logout(() => res.redirect('/login')));
+app.get('/api/me', requireAuth, (req, res) => {
+  const { name, email, avatar } = req.user;
+  res.json({ name, email, avatar });
 });
 
 // ─── Helper: llamar a Claude ──────────────────────────────────────────────────
@@ -445,7 +489,7 @@ function decodeGmailBody(payload, depth) {
 app.get('/api/gmail/search', requireAuth, async (req, res) => {
   const q = req.query.q || 'to:pedidos@premiar.seg.ar';
   const maxResults = parseInt(req.query.max) || 15;
-  const token = req.user.accessToken;
+  const token = req.user?.accessToken;
   if (!token) return res.status(401).json({ error: 'Sin token de Gmail. Cerrá sesion y volvé a entrar.' });
   try {
     // Buscar IDs
@@ -625,7 +669,7 @@ function sortAttachments(adjuntos) {
 
 app.get('/api/gmail/message/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const token = req.user.accessToken;
+  const token = req.user?.accessToken;
   if (!token) return res.status(401).json({ error: 'Sin token de Gmail.' });
   try {
     // Usar format=full pero con manejo de mails grandes
@@ -687,8 +731,8 @@ app.get('/api/gmail/search', requireAuth, async (req, res) => {
   res.status(501).json({ error: 'Gmail directo requiere configuracion adicional. Usa la opcion "Pegar correo".' });
 });
 
-// ─── Estáticos ───────────────────────────────────────────────────────────────
-app.use(express.static(path.join(__dirname, 'public')));
+// ─── Estáticos protegidos ─────────────────────────────────────────────────────
+app.use(requireAuth, express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
   console.log(`DatStudio en http://localhost:${PORT}`);
