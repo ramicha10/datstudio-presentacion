@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const { ORACLE_INTERPRETER_SYSTEM } = require('./oracle_system');
 const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system');
 // pdf-parse removed — using pdfjs-dist directly (avoids DOMMatrix crash in serverless)
@@ -54,8 +55,27 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+function parseCookies(str) {
+  return (str || '').split(';').reduce((acc, c) => {
+    const [k, ...v] = c.trim().split('=');
+    if (k) acc[k.trim()] = decodeURIComponent(v.join('='));
+    return acc;
+  }, {});
+}
+function signBypass() {
+  return crypto.createHmac('sha256', process.env.SESSION_SECRET).update('ramiro.chami@premiar.seg.ar').digest('hex');
+}
+
 function requireAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
+  // Cookie de acceso directo (funciona en serverless sin sesión)
+  const cookies = parseCookies(req.headers.cookie);
+  const expected = signBypass();
+  if (cookies._bp && cookies._bp.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(cookies._bp), Buffer.from(expected))) {
+    req.user = { id: 'bypass', name: 'Ramiro Chami', email: 'ramiro.chami@premiar.seg.ar', avatar: null, accessToken: null };
+    return next();
+  }
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'No autenticado' });
   res.redirect('/login');
 }
@@ -75,12 +95,10 @@ app.get('/auth/google/callback',
 );
 app.get('/logout', (req, res) => req.logout(() => res.redirect('/login')));
 app.get('/acceso-directo', (req, res) => {
-  const token = req.query.token;
-  if (!token || token !== process.env.BYPASS_TOKEN) return res.redirect('/login');
-  req.login({ id: 'bypass', name: 'Ramiro Chami', email: 'ramiro.chami@premiar.seg.ar', avatar: null, accessToken: null }, (err) => {
-    if (err) return res.redirect('/login');
-    res.redirect('/');
-  });
+  if (req.query.token !== process.env.BYPASS_TOKEN) return res.redirect('/login');
+  const sig = signBypass();
+  res.cookie('_bp', sig, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 8 * 60 * 60 * 1000, sameSite: 'lax' });
+  res.redirect('/');
 });
 app.get('/api/me', requireAuth, (req, res) => {
   const { name, email, avatar } = req.user;
