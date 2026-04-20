@@ -562,7 +562,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
   try {
     const casoTruncado = caso.slice(0, 12000); // max 12K chars por caso
 
-    send('progress', { agente: 'Router', estado: 'procesando' });
+    send('progress', { agente: 'Premiar', estado: 'procesando' });
     const routerOut = await callAgent(BUSINESS_AGENTS.router,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
@@ -570,7 +570,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
     const resumenRouter = clasificacion.resumen
       ? `Tipo: ${clasificacion.tipo || '—'} | Urgencia: ${clasificacion.urgencia || '—'}\n${clasificacion.resumen}`
       : routerOut;
-    send('progress', { agente: 'Router', estado: 'completo', output: resumenRouter });
+    send('progress', { agente: 'Premiar', estado: 'completo', output: resumenRouter });
 
     // Consultar cupos en Soter con los datos que extrajo el Router
     const tomador = clasificacion?.partes?.tomador || null;
@@ -588,12 +588,12 @@ app.post('/api/business', requireAuth, async (req, res) => {
     const cuposBlock = formatCuposBlock(cuposData, saUSD);
     console.log('[BUSINESS] Cupos fetched:', JSON.stringify(cuposData));
 
-    send('progress', { agente: 'Tecnico', estado: 'procesando' });
+    send('progress', { agente: 'Suscriptor', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n' + cuposBlock, 800);
-    send('progress', { agente: 'Tecnico', estado: 'completo', output: tecnicoOut });
+    send('progress', { agente: 'Suscriptor', estado: 'completo', output: tecnicoOut });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
