@@ -14,6 +14,7 @@ const { Pool }   = require('pg');
 const path       = require('path');
 
 const app  = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || null;
 
