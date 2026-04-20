@@ -45,6 +45,9 @@ Siempre que haya un tomador identificado, consultá Soter para determinar:
    Campo: cuota (en USD)
    Considerar solo registros vigentes
    Si no existe → SIN CUPO PARA ESE RIESGO
+   CRITICO: El risk_id es la columna "id" de la tabla risks (NO una columna llamada "risk_id").
+   Para identificar el id correcto, mapear la sigla/nombre del riesgo usando el CATÁLOGO DE ADUANERAS
+   del contexto operativo. Ejemplo: "IMTE" o "Importacion Temporal" → id=33. No asumir rangos genéricos.
 
 3. CUMULO ACTUAL
    Tabla: policies
@@ -205,10 +208,87 @@ const BUSINESS_SKILL_CONTEXT = `
 CONTEXTO OPERATIVO — PREMIAR CAUCION ARGENTINA
 
 RAMOS Y RISK_ID EN SOTER:
-Obra Publica: 1-7 | Obra Privada: 8-13,270 | Sum/Serv Pub: 14-22 | Sum/Serv Priv: 23-30
-Aduaneras: 31-88 | Alquiler: 53,54,56,141,268 | Judicial: 65,66,129,143,309
-Concesiones: 61,68,69,70 | IGJ/Directores: 59,266,272,311,271,275
-Actividad/Profesion: 60,62,63,90,133,136,142 | Contractuales: 312
+IMPORTANTE: Siempre buscar riesgos por columna "id" (no "risk_id"). El nombre exacto en la tabla risks puede diferir del texto del mail — buscar por id, no por nombre.
+
+Obra Publica: 1(gen),2(oferta),3(ejec),4(fondo reparo),5(acopio),6(anticipo),7(impugn),131(ten.mat),319(oferta-corr.viales),320(ejec-corr.viales),321(obras ini),322(obras oblig),323(obras rehab)
+Obra Privada: 8(gen),9(oferta),10(ejec),11(fondo reparo),12(acopio),13(anticipo),270(impugn)
+Sum/Serv Pub: 14(gen),15(oferta),16(ejec),17(fondo reparo),18(anticipo),19(certif),20(tenencia uso),21(tenencia mat),22(impugn)
+Sum/Serv Priv: 23(gen),24(oferta),25(adjud),26(fondo reparo),27(anticipo),28(certif),29(tenencia uso),30(tenencia mat)
+Alquiler: 53(comercial),54(vivienda),56(muebles),141(gen),268(vivienda nueva ley)
+Judicial: 65(contracautela),66(sust.med.caut),129(sust.pago previo),143(gen),267(sust.med.caut.penal),309(sust.arraigo)
+Concesiones: 61(canon),68(oferta),69(cumplimiento),70(gen),358(cumplimiento adjudicacion)
+IGJ/Directores: 59(IGJ),266(IGJ extran),271(IGJ San Luis),272(directores),275(IGJ TDF),311(IGJ BsAs)
+Actividad/Profesion: 60(turismo),62(martilleros),63(corredores),64(serv.portuarios),90(ag.personal eventual),98(transp.pasajeros),99(GNC ENARGAS),102(fiel cumplimiento),133(op.financieros),136(serv.aereos),142(gen),265(reg.modal.turismo),269(aut.reg.certif),273(empresas seguridad),274(almac.imagenes),310(transp.aut.pub.nac),313(desc.no oblig),314(tabacalera),315(transp.pub.cordoba),316(ag.recaudadores),317(audit.seg.amb),357(ERT),359(lic.difusion musical)
+Contractuales: 312
+
+ADUANERAS — CATÁLOGO COMPLETO (buscar por id, no por nombre ni sigla):
+31: Garantias Aduaneras (genérico)
+32: TRAN - Transito Terrestre sin prohibicion
+33: IMTE - Importacion Temporal sin prohibicion  ← ID CORRECTO PARA IMTE
+34: FCEO - Falta Certific.Origen
+35: Deposito Fiscal (EXCLUIDA de automatica)
+36: ANBE - Anticipo Beneficios
+37: Diferencia de Derechos (Generico)
+39: INHI - Imp.Bs.Usados Ind.Hidrocarb.
+40: SUCO - Sumario Contencioso (EXCLUIDA de automatica)
+41: DUMP - Derechos Antidumping
+42: ENES - Envios Escalonados (EXCLUIDA de automatica)
+43: EXTE - Exportacion Temporal Sin Prohibicion
+44: REAU - Regimen Automotriz
+45: Aduana Domiciliaria (EXCLUIDA de automatica)
+46: AUTO - Autoliquidacion
+47: CLAN - Mercaderia sujeta a analisis
+48: COMP - Derechos Compensatorios
+49: DEFE - Importac.de Mercad.c/deficiencias
+50: ECON - Envio en Consignacion
+51: DGI - Veracidad
+52: DGI - Diferimiento Impuestos
+71: EGTR - Egreso c/Trans.de Area Adua.Esp.
+72: EXTP - Exportacion Temporal Con Prohibicion
+73: FATR - Falta Documento de Transporte
+74: FAZF - Falta Documento Zonas Francas
+75: FCAE - Falta Cert.Orig.Area Adu.Especial
+76: FCTX - Falta Certif.Origen Res.763/96
+77: GPIN - Grandes Proy.Inversion (EXCLUIDA de automatica)
+78: GTGL - Garantia Global
+79: IMTP - Import.Temporal Con Prohibicion
+80: INVA - Investigacion de Valor
+81: INVO - Investigacion de Origen
+82: LIPU - Lineas de Produccion Usadas
+83: MORA - Operacion Canal Morado
+84: MOVA - Modulo Valor
+85: RECU - Recurso de Impugnacion
+86: REDU - Reduccion Arancelaria
+87: SUEX - Sustitucion de Exportaciones
+88: TRAP - Transito Terrestre Con Prohibicion
+89: MUAU - Multa Automatica
+91: FCAO - Falta Cert.Origen Adec.Area Ad.Es
+92: FCAP - Falta Certif Aduana de Procedenc.
+93: FDOR - Fundada Duda Origen Mercosur
+94: GADO - Alerta Destinaciones Oficializada
+95: SUIM - Sustitucion de Importaciones
+96: SUPE - Supeditacion
+97: SAIN - Salvaguardia Industrial
+106: Garantia de Inscripcion en Registro
+111: OFIJ - Oficio Judicial
+112: ERFO - Error Formal en Certif.de Origen
+113: ISTA - Iniciativa Seguridad Trans.Aduan.
+116: TRSP - Agente de transporte aduanero
+117: ENRE - Energias renovables bienes terminados
+118: IMEX - Importador Exportador
+119: BARA - Buque abastecedor de combustible
+120: VACR - Valor criterio (EXCLUIDA de automatica)
+121: DONA - Donaciones
+122: TRAS - Declaracion sumaria trans. de import.
+123: ITER - Imp. temp. de bs. para la mudanza
+124: CAUC - Cupo automotriz
+125: ENRF - Imp. de bs. Intermedios
+137: PSAD - Servicios de archivo y digitalizacion
+140: INHI (version 2)
+318: AOLS - Agente de transporte aduanero operador logístico seguro
+360: RIGI - Regimen de Incentivo Grandes Inversiones (EXCLUIDA de automatica)
+
+REGLA DE IDENTIFICACION DE RIESGO: Cuando el mail mencione una sigla aduanera (IMTE, TRAN, EXTE, SUCO, etc.), mapearla al id correspondiente del catálogo anterior. Si el texto dice "Importacion Temporal" o "IMTE" → risk_id = 33. Buscar en person_taker_risk_cupos con ese id exacto.
 
 SINIESTROS:
 Publicos: solo resolucion firme del asegurado (Res.SSN 293/2025).
