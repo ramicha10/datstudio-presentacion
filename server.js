@@ -410,6 +410,144 @@ async function callAgent(system, content, maxTokens) {
   return callClaude(fullSystem, [{ role: 'user', content }], maxTokens || 800);
 }
 
+// Consulta Soter para obtener cupos y cúmulos del tomador
+async function fetchCuposData(tomadorNombre, tomadorCuit, riesgoNombre) {
+  try {
+    const resultado = {
+      tomador: null,
+      cupo_total: null,
+      cupo_riesgo: null,
+      cumulo_total: null,
+      cumulo_riesgo: null,
+      riesgo_id: null,
+      es_tomador_nuevo: null,
+      error: null
+    };
+
+    let personRow = null;
+    let personId  = null;
+
+    if (tomadorCuit) {
+      const cuitLimpio = tomadorCuit.replace(/[-]/g, '');
+      const rPol = await soter.query(
+        `SELECT DISTINCT taker_id, taker_name FROM policies
+         WHERE REPLACE(COALESCE(cuit,''),'-','') = $1 AND taker_id IS NOT NULL LIMIT 1`, [cuitLimpio]);
+      if (rPol.rows.length) {
+        personId = rPol.rows[0].taker_id;
+        personRow = { id: personId, nombre_completo: (rPol.rows[0].taker_name || '').trim() };
+      }
+    }
+
+    if (!personRow && tomadorNombre) {
+      const rPolNombre = await soter.query(
+        `SELECT DISTINCT taker_id, taker_name FROM policies
+         WHERE LOWER(taker_name) ILIKE $1 AND taker_id IS NOT NULL LIMIT 1`,
+        ['%' + tomadorNombre.toLowerCase() + '%']);
+      if (rPolNombre.rows.length) {
+        personId = rPolNombre.rows[0].taker_id;
+        personRow = { id: personId, nombre_completo: (rPolNombre.rows[0].taker_name || '').trim() };
+      }
+    }
+
+    if (!personRow) {
+      resultado.error = 'Tomador no encontrado en Soter (CUIT/nombre sin coincidencia)';
+      return resultado;
+    }
+
+    personId = personRow.id;
+    resultado.tomador = { id: personId, nombre: personRow.nombre_completo };
+
+    const polCount = await soter.query(
+      `SELECT COUNT(*) as cant FROM policies
+       WHERE taker_id = $1 AND endorsement_type_id = 1 AND sequence_number = 0`, [personId]);
+    resultado.es_tomador_nuevo = parseInt(polCount.rows[0].cant) === 0;
+
+    const cupoTotal = await soter.query(
+      `SELECT total_quota FROM person_taker_total_cupos
+       WHERE person_id = $1 AND from_date <= NOW() AND (until_date IS NULL OR until_date >= NOW())
+       ORDER BY until_date DESC LIMIT 1`, [personId]);
+    resultado.cupo_total = cupoTotal.rows.length ? parseFloat(cupoTotal.rows[0].total_quota) : null;
+
+    if (riesgoNombre) {
+      const riesgoQ = await soter.query(
+        `SELECT id, name FROM risks WHERE LOWER(name) ILIKE $1 LIMIT 1`,
+        ['%' + riesgoNombre.toLowerCase() + '%']);
+      if (riesgoQ.rows.length) {
+        resultado.riesgo_id = riesgoQ.rows[0].id;
+        resultado.riesgo_nombre = riesgoQ.rows[0].name;
+      }
+    }
+
+    if (resultado.riesgo_id) {
+      const cupoRiesgo = await soter.query(
+        `SELECT cuota FROM person_taker_risk_cupos
+         WHERE person_id = $1 AND risk_id = $2
+           AND from_date <= NOW() AND (until_date IS NULL OR until_date >= NOW())
+         ORDER BY until_date DESC LIMIT 1`, [personId, resultado.riesgo_id]);
+      resultado.cupo_riesgo = cupoRiesgo.rows.length ? parseFloat(cupoRiesgo.rows[0].cuota) : null;
+    }
+
+    const cumuloQ = await soter.query(
+      `SELECT MAX(current_cumulus) as cumulo_total,
+              MAX(risk_current_cumulus) as cumulo_riesgo
+       FROM policies
+       WHERE taker_id = $1
+         AND endorsement_type_id = 1 AND sequence_number = 0
+         AND state IN ('approved','verified','billed','open')
+         AND canceled_at IS NULL
+         AND ($2::integer IS NULL OR risk_id = $2)`,
+      [personId, resultado.riesgo_id || null]);
+    if (cumuloQ.rows.length) {
+      resultado.cumulo_total = parseFloat(cumuloQ.rows[0].cumulo_total) || 0;
+      resultado.cumulo_riesgo = parseFloat(cumuloQ.rows[0].cumulo_riesgo) || 0;
+    }
+
+    return resultado;
+  } catch(e) {
+    console.error('[fetchCuposData] Error:', e.message);
+    return { error: 'Error consultando Soter: ' + e.message };
+  }
+}
+
+// Formatea el bloque de cupos para inyectar al Técnico
+function formatCuposBlock(cupos, saUSD) {
+  if (!cupos || cupos.error) {
+    const motivo = cupos?.error || 'Error desconocido';
+    return `=== DATOS DE CUPOS Y CUMULOS (Soter) ===
+TOMADOR NO ENCONTRADO EN SOTER: ${motivo}
+→ ASUMIR: TOMADOR NUEVO / PRIMER NEGOCIO. Aplicar límites de "Primer Negocio" de la tabla de emisión automática.
+→ Cúmulo actual: USD 0 (sin historial). Cupo total: sin asignar aún.
+→ Dictaminá directamente con los límites de primer negocio. NO pidas verificación manual ni bloquees el caso por falta de CUIT.
+→ Si el CUIT es necesario para emitir en Soter, indicarlo como condición de emisión (no como bloqueo del dictamen).`;
+  }
+
+  const fmt = (v) => v != null ? `USD ${Number(v).toLocaleString('es-AR')}` : 'Sin asignar';
+  const dispTotal = cupos.cupo_total != null && cupos.cumulo_total != null
+    ? cupos.cupo_total - cupos.cumulo_total : null;
+  const dispRiesgo = cupos.cupo_riesgo != null && cupos.cumulo_riesgo != null
+    ? cupos.cupo_riesgo - cupos.cumulo_riesgo : null;
+
+  let entraTotal = '—';
+  let entraRiesgo = '—';
+  if (saUSD && dispTotal != null) entraTotal = saUSD <= dispTotal ? 'SI ✅' : 'NO 🔴';
+  if (saUSD && dispRiesgo != null) entraRiesgo = saUSD <= dispRiesgo ? 'SI ✅' : 'NO 🔴';
+
+  return `=== DATOS DE CUPOS Y CUMULOS (Soter — consultado ahora) ===
+Tomador: ${cupos.tomador?.nombre || '—'} (person_id: ${cupos.tomador?.id || '—'})
+Tipo: ${cupos.es_tomador_nuevo ? 'TOMADOR NUEVO (sin polizas previas)' : 'TOMADOR CON HISTORIAL'}
+Riesgo identificado: ${cupos.riesgo_nombre || 'No identificado en catalogo'} (risk_id: ${cupos.riesgo_id || '—'})
+
+CUPO TOTAL:     ${fmt(cupos.cupo_total)}
+CUMULO TOTAL:   ${fmt(cupos.cumulo_total)}
+DISPONIBLE:     ${fmt(dispTotal)}  ${saUSD ? `→ SA USD ${saUSD.toLocaleString('es-AR')} entra: ${entraTotal}` : ''}
+
+CUPO RIESGO:    ${fmt(cupos.cupo_riesgo)}
+CUMULO RIESGO:  ${fmt(cupos.cumulo_riesgo)}
+DISPONIBLE:     ${fmt(dispRiesgo)}  ${saUSD ? `→ SA USD ${saUSD.toLocaleString('es-AR')} entra: ${entraRiesgo}` : ''}
+
+Con estos datos REALES dictaminá directamente — no pidas verificar en Soter.`;
+}
+
 app.post('/api/business', requireAuth, async (req, res) => {
   const { caso } = req.body;
   console.log('[BUSINESS] caso recibido, largo:', caso ? caso.length : 0, '| primeros 200 chars:', (caso||'').slice(0,200));
@@ -423,7 +561,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
   try {
     const casoTruncado = caso.slice(0, 12000); // max 12K chars por caso
 
-    send('progress', { agente: 'Premiar', estado: 'procesando' });
+    send('progress', { agente: 'Router', estado: 'procesando' });
     const routerOut = await callAgent(BUSINESS_AGENTS.router,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
@@ -431,13 +569,30 @@ app.post('/api/business', requireAuth, async (req, res) => {
     const resumenRouter = clasificacion.resumen
       ? `Tipo: ${clasificacion.tipo || '—'} | Urgencia: ${clasificacion.urgencia || '—'}\n${clasificacion.resumen}`
       : routerOut;
-    send('progress', { agente: 'Premiar', estado: 'completo', output: resumenRouter });
+    send('progress', { agente: 'Router', estado: 'completo', output: resumenRouter });
 
-    send('progress', { agente: 'Suscriptor', estado: 'procesando' });
+    // Consultar cupos en Soter con los datos que extrajo el Router
+    const tomador = clasificacion?.partes?.tomador || null;
+    const riesgo  = clasificacion?.partes?.riesgo  || null;
+    const montoStr = clasificacion?.partes?.monto   || null;
+    const moneda  = clasificacion?.partes?.moneda   || 'ARS';
+    const cuitMatch = casoTruncado.match(/\b(\d{2}-?\d{8}-?\d{1}|\d{11})\b/);
+    const cuit = cuitMatch ? cuitMatch[1] : null;
+    let saUSD = null;
+    if (montoStr) {
+      const num = parseFloat(montoStr.replace(/[^\d.]/g, ''));
+      if (!isNaN(num)) saUSD = moneda === 'USD' ? num : null;
+    }
+    const cuposData = await fetchCuposData(tomador, cuit, riesgo);
+    const cuposBlock = formatCuposBlock(cuposData, saUSD);
+    console.log('[BUSINESS] Cupos fetched:', JSON.stringify(cuposData));
+
+    send('progress', { agente: 'Tecnico', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
-      '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2), 800);
-    send('progress', { agente: 'Suscriptor', estado: 'completo', output: tecnicoOut });
+      '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
+      '\n\n' + cuposBlock, 800);
+    send('progress', { agente: 'Tecnico', estado: 'completo', output: tecnicoOut });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
