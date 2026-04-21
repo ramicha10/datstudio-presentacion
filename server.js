@@ -1,4 +1,23 @@
 require('dotenv').config();
+
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  globalThis.DOMMatrix = class DOMMatrix {
+    constructor() {
+      this.a=1;this.b=0;this.c=0;this.d=1;this.e=0;this.f=0;
+      this.m11=1;this.m12=0;this.m13=0;this.m14=0;
+      this.m21=0;this.m22=1;this.m23=0;this.m24=0;
+      this.m31=0;this.m32=0;this.m33=1;this.m34=0;
+      this.m41=0;this.m42=0;this.m43=0;this.m44=1;
+      this.is2D=true;this.isIdentity=true;
+    }
+    multiply(){ return this; }
+    inverse(){ return this; }
+    translate(){ return this; }
+    scale(){ return this; }
+    rotate(){ return this; }
+    transformPoint(p){ return p||{x:0,y:0,z:0,w:1}; }
+  };
+}
 const { ORACLE_INTERPRETER_SYSTEM } = require('./oracle_system');
 const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system');
 // pdf-parse removed — using pdfjs-dist directly (avoids DOMMatrix crash in serverless)
@@ -49,10 +68,11 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(session({
   secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }
+  cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000 }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
