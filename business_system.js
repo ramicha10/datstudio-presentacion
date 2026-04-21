@@ -57,14 +57,11 @@ CRITICO — MONEDA:
    del contexto operativo. Ejemplo: "IMTE" o "Importacion Temporal" → id=33. No asumir rangos genericos.
 
 3. CUMULO ACTUAL
-   Tabla: cumulus_takers (NO usar policies para cumulos — current_cumulus en policies es NULL)
-   Query CORRECTA para cumulo total y por riesgo:
-   SELECT current_cumulus, current_risk_cumulus, risk_id FROM cumulus_takers WHERE person_id = [id] ORDER BY id DESC LIMIT 1
-   current_cumulus = cumulo total acumulado del tomador
-   current_risk_cumulus = cumulo acumulado para el riesgo de ese ultimo registro
-   Para cumulo de un riesgo especifico:
-   SELECT current_cumulus, current_risk_cumulus FROM cumulus_takers WHERE person_id = [id] AND risk_id = [risk_id] ORDER BY id DESC LIMIT 1
-   CRITICO: siempre ORDER BY id DESC LIMIT 1 — el ultimo registro tiene el acumulado actualizado.
+   Tabla: policies
+   Cumulo total: MAX(current_cumulus) de polizas vigentes del tomador
+   (state IN ('approved','verified','billed','open') AND canceled_at IS NULL AND endorsement_type_id=1 AND sequence_number=0)
+   Cumulo por riesgo: MAX(risk_current_cumulus) de polizas vigentes del mismo risk_id
+   NOTA: current_cumulus y risk_current_cumulus ya vienen calculados en la ultima poliza vigente — usar directamente, no sumar manualmente.
    MONEDA: ambos campos estan en PESOS ARGENTINOS (ARS). Mostrar con $ sin convertir.
 
 4. DISPONIBLE

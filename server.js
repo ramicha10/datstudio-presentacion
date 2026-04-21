@@ -1,5 +1,4 @@
 require('dotenv').config();
-const crypto = require('crypto');
 const { ORACLE_INTERPRETER_SYSTEM } = require('./oracle_system');
 const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system');
 // pdf-parse removed — using pdfjs-dist directly (avoids DOMMatrix crash in serverless)
@@ -7,23 +6,25 @@ const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const express    = require('express');
 const session    = require('express-session');
-const PgSession  = require('connect-pg-simple')(session);
 const passport   = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { Pool }   = require('pg');
 const path       = require('path');
 
 const app  = express();
-app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
-const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || null;
 
 // ─── Validaciones ─────────────────────────────────────────────────────────────
 const REQUIRED = ['ANTHROPIC_API_KEY','GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','SESSION_SECRET','SOTER_DB_URL','POSEIDON_DB_URL','HERMES_DB_URL'];
 const missing  = REQUIRED.filter(k => !process.env[k]);
 if (missing.length) { console.error('Faltan variables en .env:', missing.join(', ')); process.exit(1); }
 
+const ALLOWED_DOMAIN = process.env.ALLOWED_DOMAIN || null;
+
 // ─── Pools de BD ──────────────────────────────────────────────────────────────
+// ─── Pools de BD ──────────────────────────────────────────────────────────────
+// ─── Pools de BD ──────────────────────────────────────────────────────────────
+
 const soter    = new Pool({ connectionString: process.env.SOTER_DB_URL,    ssl: { rejectUnauthorized: false } });
 const poseidon = new Pool({ connectionString: process.env.POSEIDON_DB_URL, ssl: { rejectUnauthorized: false } });
 const hermes   = new Pool({ connectionString: process.env.HERMES_DB_URL,   ssl: { rejectUnauthorized: false } });
@@ -40,6 +41,7 @@ passport.use(new GoogleStrategy({
   if (ALLOWED_DOMAIN && !email.endsWith('@' + ALLOWED_DOMAIN)) {
     return done(null, false);
   }
+  // Guardar el accessToken para usar con Gmail API
   return done(null, { id: profile.id, name: profile.displayName, email, avatar: profile.photos?.[0]?.value || null, accessToken });
 }));
 
@@ -49,34 +51,14 @@ passport.deserializeUser((user, done) => done(null, user));
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(session({
-  store: new PgSession({ pool: hermes, tableName: 'sessions', createTableIfMissing: true }),
   secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
   cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-function parseCookies(str) {
-  return (str || '').split(';').reduce((acc, c) => {
-    const [k, ...v] = c.trim().split('=');
-    if (k) acc[k.trim()] = decodeURIComponent(v.join('='));
-    return acc;
-  }, {});
-}
-function signBypass() {
-  return crypto.createHmac('sha256', process.env.SESSION_SECRET).update('ramiro.chami@premiar.seg.ar').digest('hex');
-}
-
 function requireAuth(req, res, next) {
   if (req.isAuthenticated()) return next();
-  // Cookie de acceso directo (funciona en serverless sin sesión)
-  const cookies = parseCookies(req.headers.cookie);
-  const expected = signBypass();
-  if (cookies._bp && cookies._bp.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(cookies._bp), Buffer.from(expected))) {
-    req.user = { id: 'bypass', name: 'Ramiro Chami', email: 'ramiro.chami@premiar.seg.ar', avatar: null, accessToken: null };
-    return next();
-  }
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'No autenticado' });
   res.redirect('/login');
 }
@@ -86,7 +68,7 @@ app.get('/login', (req, res) => {
   if (req.isAuthenticated()) return res.redirect('/');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
-app.get('/auth/google', passport.authenticate('google', {
+app.get('/auth/google', passport.authenticate('google', { 
   scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.readonly'],
   accessType: 'online'
 }));
@@ -95,12 +77,6 @@ app.get('/auth/google/callback',
   (req, res) => res.redirect('/')
 );
 app.get('/logout', (req, res) => req.logout(() => res.redirect('/login')));
-app.get('/acceso-directo', (req, res) => {
-  if (req.query.token !== process.env.BYPASS_TOKEN) return res.redirect('/login');
-  const sig = signBypass();
-  res.cookie('_bp', sig, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 8 * 60 * 60 * 1000, sameSite: 'lax' });
-  res.redirect('/');
-});
 app.get('/api/me', requireAuth, (req, res) => {
   const { name, email, avatar } = req.user;
   res.json({ name, email, avatar });
@@ -423,105 +399,6 @@ async function callAgent(system, content, maxTokens) {
   return callClaude(fullSystem, [{ role: 'user', content }], maxTokens || 800);
 }
 
-// Consulta Soter para obtener cupos y cúmulos del tomador
-async function fetchCuposData(tomadorNombre, tomadorCuit, riesgoNombre) {
-  try {
-    const resultado = {
-      tomador: null,
-      cupo_total: null,
-      cupo_riesgo: null,
-      cumulo_total: null,
-      cumulo_riesgo: null,
-      riesgo_id: null,
-      es_tomador_nuevo: null,
-      error: null
-    };
-
-    let personRow = null;
-    let personId  = null;
-
-    if (tomadorCuit) {
-      const cuitLimpio = tomadorCuit.replace(/[-]/g, '');
-      const rPol = await soter.query(
-        `SELECT DISTINCT taker_id, taker_name FROM policies
-         WHERE REPLACE(COALESCE(cuit,''),'-','') = $1 AND taker_id IS NOT NULL LIMIT 1`, [cuitLimpio]);
-      if (rPol.rows.length) {
-        personId = rPol.rows[0].taker_id;
-        personRow = { id: personId, nombre_completo: (rPol.rows[0].taker_name || '').trim() };
-      }
-    }
-
-    if (!personRow && tomadorNombre) {
-      const rPolNombre = await soter.query(
-        `SELECT DISTINCT taker_id, taker_name FROM policies
-         WHERE LOWER(taker_name) ILIKE $1 AND taker_id IS NOT NULL LIMIT 1`,
-        ['%' + tomadorNombre.toLowerCase() + '%']);
-      if (rPolNombre.rows.length) {
-        personId = rPolNombre.rows[0].taker_id;
-        personRow = { id: personId, nombre_completo: (rPolNombre.rows[0].taker_name || '').trim() };
-      }
-    }
-
-    if (!personRow) {
-      resultado.error = 'Tomador no encontrado en Soter (CUIT/nombre sin coincidencia)';
-      return resultado;
-    }
-
-    personId = personRow.id;
-    resultado.tomador = { id: personId, nombre: personRow.nombre_completo };
-
-    const polCount = await soter.query(
-      `SELECT COUNT(*) as cant FROM policies
-       WHERE taker_id = $1 AND endorsement_type_id = 1 AND sequence_number = 0`, [personId]);
-    resultado.es_tomador_nuevo = parseInt(polCount.rows[0].cant) === 0;
-
-    const cupoTotal = await soter.query(
-      `SELECT total_quota FROM person_taker_total_cupos
-       WHERE person_id = $1 AND from_date <= NOW() AND (until_date IS NULL OR until_date >= NOW())
-       ORDER BY until_date DESC LIMIT 1`, [personId]);
-    resultado.cupo_total = cupoTotal.rows.length ? parseFloat(cupoTotal.rows[0].total_quota) : null;
-
-    if (riesgoNombre) {
-      const riesgoQ = await soter.query(
-        `SELECT id, name FROM risks WHERE LOWER(name) ILIKE $1 LIMIT 1`,
-        ['%' + riesgoNombre.toLowerCase() + '%']);
-      if (riesgoQ.rows.length) {
-        resultado.riesgo_id = riesgoQ.rows[0].id;
-        resultado.riesgo_nombre = riesgoQ.rows[0].name;
-      }
-    }
-
-    if (resultado.riesgo_id) {
-      const cupoRiesgo = await soter.query(
-        `SELECT cuota FROM person_taker_risk_cupos
-         WHERE person_id = $1 AND risk_id = $2
-           AND from_date <= NOW() AND (until_date IS NULL OR until_date >= NOW())
-         ORDER BY until_date DESC LIMIT 1`, [personId, resultado.riesgo_id]);
-      resultado.cupo_riesgo = cupoRiesgo.rows.length ? parseFloat(cupoRiesgo.rows[0].cuota) : null;
-    }
-
-    const cumuloQ = await soter.query(
-      `SELECT MAX(current_cumulus) as cumulo_total,
-              MAX(risk_current_cumulus) as cumulo_riesgo
-       FROM policies
-       WHERE taker_id = $1
-         AND endorsement_type_id = 1 AND sequence_number = 0
-         AND state IN ('approved','verified','billed','open')
-         AND canceled_at IS NULL
-         AND ($2::integer IS NULL OR risk_id = $2)`,
-      [personId, resultado.riesgo_id || null]);
-    if (cumuloQ.rows.length) {
-      resultado.cumulo_total = parseFloat(cumuloQ.rows[0].cumulo_total) || 0;
-      resultado.cumulo_riesgo = parseFloat(cumuloQ.rows[0].cumulo_riesgo) || 0;
-    }
-
-    return resultado;
-  } catch(e) {
-    console.error('[fetchCuposData] Error:', e.message);
-    return { error: 'Error consultando Soter: ' + e.message };
-  }
-}
-
 // Consulta Poseidon para estado de cobranzas del tomador
 async function fetchCobranzasData(tomadorNombre) {
   try {
@@ -568,6 +445,118 @@ function formatCobranzasBlock(cobranzas) {
   return lineas.join(SEP);
 }
 
+// Consulta Soter para obtener cupos y cúmulos del tomador
+async function fetchCuposData(tomadorNombre, tomadorCuit, riesgoNombre) {
+  try {
+    const resultado = {
+      tomador: null,
+      cupo_total: null,
+      cupo_riesgo: null,
+      cumulo_total: null,
+      cumulo_riesgo: null,
+      riesgo_id: null,
+      es_tomador_nuevo: null,
+      error: null
+    };
+
+    // 1. Buscar person_id por CUIT o nombre
+    // El CUIT en Soter vive en policies.cuit (people.cuit está vacío)
+    let personRow = null;
+    let personId  = null;
+
+    if (tomadorCuit) {
+      const cuitLimpio = tomadorCuit.replace(/[-]/g, '');
+      // Buscar taker_id desde policies.cuit
+      const rPol = await soter.query(
+        `SELECT DISTINCT taker_id, taker_name FROM policies
+         WHERE REPLACE(COALESCE(cuit,''),'-','') = $1 AND taker_id IS NOT NULL LIMIT 1`, [cuitLimpio]);
+      if (rPol.rows.length) {
+        personId = rPol.rows[0].taker_id;
+        personRow = { id: personId, nombre_completo: (rPol.rows[0].taker_name || '').trim() };
+      }
+    }
+
+    // Fallback por nombre: buscar en policies.taker_name
+    if (!personRow && tomadorNombre) {
+      const rPolNombre = await soter.query(
+        `SELECT DISTINCT taker_id, taker_name FROM policies
+         WHERE LOWER(taker_name) ILIKE $1 AND taker_id IS NOT NULL LIMIT 1`,
+        ['%' + tomadorNombre.toLowerCase() + '%']);
+      if (rPolNombre.rows.length) {
+        personId = rPolNombre.rows[0].taker_id;
+        personRow = { id: personId, nombre_completo: (rPolNombre.rows[0].taker_name || '').trim() };
+      }
+    }
+
+    if (!personRow) {
+      resultado.error = 'Tomador no encontrado en Soter (CUIT/nombre sin coincidencia)';
+      return resultado;
+    }
+
+    personId = personRow.id;
+    resultado.tomador = { id: personId, nombre: personRow.nombre_completo };
+
+    // 2. Verificar si es tomador nuevo
+    const polCount = await soter.query(
+      `SELECT COUNT(*) as cant FROM policies
+       WHERE taker_id = $1 AND endorsement_type_id = 1 AND sequence_number = 0`, [personId]);
+    resultado.es_tomador_nuevo = parseInt(polCount.rows[0].cant) === 0;
+
+    // 3. Cupo total vigente
+    const cupoTotal = await soter.query(
+      `SELECT total_quota FROM person_taker_total_cupos
+       WHERE person_id = $1 AND from_date <= NOW() AND (until_date IS NULL OR until_date >= NOW())
+       ORDER BY until_date DESC LIMIT 1`, [personId]);
+    resultado.cupo_total = cupoTotal.rows.length ? parseFloat(cupoTotal.rows[0].total_quota) : null;
+
+    // 4. Buscar risk_id por nombre del riesgo
+    if (riesgoNombre) {
+      const riesgoQ = await soter.query(
+        `SELECT id, name FROM risks WHERE LOWER(name) ILIKE $1 LIMIT 1`,
+        ['%' + riesgoNombre.toLowerCase() + '%']);
+      if (riesgoQ.rows.length) {
+        resultado.riesgo_id = riesgoQ.rows[0].id;
+        resultado.riesgo_nombre = riesgoQ.rows[0].name;
+      }
+    }
+
+    // 5. Cupo por riesgo vigente
+    if (resultado.riesgo_id) {
+      const cupoRiesgo = await soter.query(
+        `SELECT cuota FROM person_taker_risk_cupos
+         WHERE person_id = $1 AND risk_id = $2
+           AND from_date <= NOW() AND (until_date IS NULL OR until_date >= NOW())
+         ORDER BY until_date DESC LIMIT 1`, [personId, resultado.riesgo_id]);
+      resultado.cupo_riesgo = cupoRiesgo.rows.length ? parseFloat(cupoRiesgo.rows[0].cuota) : null;
+    }
+
+    // 6. Cúmulo actual total (desde cumulus_takers — current_cumulus en policies es NULL)
+    const cumuloTotalQ = await soter.query(
+      `SELECT current_cumulus FROM cumulus_takers
+       WHERE person_id = $1
+       ORDER BY id DESC LIMIT 1`,
+      [personId]);
+    resultado.cumulo_total = cumuloTotalQ.rows.length ? parseFloat(cumuloTotalQ.rows[0].current_cumulus) || 0 : 0;
+
+    // Cúmulo por riesgo específico
+    if (resultado.riesgo_id) {
+      const cumuloRiesgoQ = await soter.query(
+        `SELECT current_risk_cumulus FROM cumulus_takers
+         WHERE person_id = $1 AND risk_id = $2
+         ORDER BY id DESC LIMIT 1`,
+        [personId, resultado.riesgo_id]);
+      resultado.cumulo_riesgo = cumuloRiesgoQ.rows.length ? parseFloat(cumuloRiesgoQ.rows[0].current_risk_cumulus) || 0 : 0;
+    } else {
+      resultado.cumulo_riesgo = 0;
+    }
+
+    return resultado;
+  } catch(e) {
+    console.error('[fetchCuposData] Error:', e.message);
+    return { error: 'Error consultando Soter: ' + e.message };
+  }
+}
+
 // Formatea el bloque de cupos para inyectar al Técnico
 function formatCuposBlock(cupos, saUSD) {
   if (!cupos || cupos.error) {
@@ -575,12 +564,12 @@ function formatCuposBlock(cupos, saUSD) {
     return `=== DATOS DE CUPOS Y CUMULOS (Soter) ===
 TOMADOR NO ENCONTRADO EN SOTER: ${motivo}
 → ASUMIR: TOMADOR NUEVO / PRIMER NEGOCIO. Aplicar límites de "Primer Negocio" de la tabla de emisión automática.
-→ Cúmulo actual: USD 0 (sin historial). Cupo total: sin asignar aún.
+→ Cúmulo actual: $0 (sin historial). Cupo total: sin asignar aún.
 → Dictaminá directamente con los límites de primer negocio. NO pidas verificación manual ni bloquees el caso por falta de CUIT.
 → Si el CUIT es necesario para emitir en Soter, indicarlo como condición de emisión (no como bloqueo del dictamen).`;
   }
 
-  const fmt = (v) => v != null ? `USD ${Number(v).toLocaleString('es-AR')}` : 'Sin asignar';
+  const fmt = (v) => v != null ? `$${Number(v).toLocaleString('es-AR')}` : 'Sin asignar';
   const dispTotal = cupos.cupo_total != null && cupos.cumulo_total != null
     ? cupos.cupo_total - cupos.cumulo_total : null;
   const dispRiesgo = cupos.cupo_riesgo != null && cupos.cumulo_riesgo != null
@@ -620,28 +609,28 @@ app.post('/api/business', requireAuth, async (req, res) => {
   try {
     const casoTruncado = caso.slice(0, 12000); // max 12K chars por caso
 
-    send('progress', { agente: 'Premiar', estado: 'procesando' });
+    send('progress', { agente: 'Router', estado: 'procesando' });
     const routerOut = await callAgent(BUSINESS_AGENTS.router,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
     try { clasificacion = JSON.parse((routerOut.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch(e) { clasificacion = { resumen: routerOut }; }
-    const resumenRouter = clasificacion.resumen
-      ? `Tipo: ${clasificacion.tipo || '—'} | Urgencia: ${clasificacion.urgencia || '—'}\n${clasificacion.resumen}`
-      : routerOut;
-    send('progress', { agente: 'Premiar', estado: 'completo', output: resumenRouter });
+    send('progress', { agente: 'Router', estado: 'completo', data: clasificacion });
 
     // Consultar cupos en Soter con los datos que extrajo el Router
     const tomador = clasificacion?.partes?.tomador || null;
     const riesgo  = clasificacion?.partes?.riesgo  || null;
     const montoStr = clasificacion?.partes?.monto   || null;
     const moneda  = clasificacion?.partes?.moneda   || 'ARS';
+    // Extraer CUIT si viene en el caso (patrón XX-XXXXXXXX-X o XXXXXXXXXXX)
     const cuitMatch = casoTruncado.match(/\b(\d{2}-?\d{8}-?\d{1}|\d{11})\b/);
     const cuit = cuitMatch ? cuitMatch[1] : null;
+    // Convertir monto a USD aproximado para comparar con límites (si viene en ARS, dividir por TC ~1000 como fallback)
     let saUSD = null;
     if (montoStr) {
       const num = parseFloat(montoStr.replace(/[^\d.]/g, ''));
-      if (!isNaN(num)) saUSD = moneda === 'USD' ? num : null;
+      if (!isNaN(num)) saUSD = moneda === 'USD' ? num : null; // Solo convertir si viene en USD directamente; ARS queda null
     }
+
     const [cuposData, cobranzasData] = await Promise.all([
       fetchCuposData(tomador, cuit, riesgo),
       fetchCobranzasData(tomador)
@@ -651,12 +640,12 @@ app.post('/api/business', requireAuth, async (req, res) => {
     console.log('[BUSINESS] Cupos fetched:', JSON.stringify(cuposData));
     console.log('[BUSINESS] Cobranzas fetched:', JSON.stringify(cobranzasData));
 
-    send('progress', { agente: 'Suscriptor', estado: 'procesando' });
+    send('progress', { agente: 'Tecnico', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n' + cuposBlock, 800);
-    send('progress', { agente: 'Suscriptor', estado: 'completo', output: tecnicoOut });
+    send('progress', { agente: 'Tecnico', estado: 'completo' });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
@@ -664,7 +653,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '\n\n=== CLASIFICACION ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n=== ANALISIS TECNICO ===\n' + tecnicoOut +
       '\n\n' + cobranzasBlock, 1000);
-    send('progress', { agente: 'Operativo', estado: 'completo', output: operativoOut });
+    send('progress', { agente: 'Operativo', estado: 'completo' });
 
     send('progress', { agente: 'Validador', estado: 'procesando' });
     const validadorOut = await callAgent(BUSINESS_AGENTS.validador,
@@ -673,7 +662,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '\n\n=== TECNICO ===\n' + tecnicoOut +
       '\n\n=== OPERATIVO ===\n' + operativoOut +
       '\n\n' + cobranzasBlock, 1500);
-    send('progress', { agente: 'Validador', estado: 'completo', output: validadorOut });
+    send('progress', { agente: 'Validador', estado: 'completo' });
 
     send('done', { resultado: validadorOut, clasificacion });
     res.end();
@@ -738,7 +727,7 @@ function decodeGmailBody(payload, depth) {
 app.get('/api/gmail/search', requireAuth, async (req, res) => {
   const q = req.query.q || 'to:pedidos@premiar.seg.ar';
   const maxResults = parseInt(req.query.max) || 15;
-  const token = req.user?.accessToken;
+  const token = req.user.accessToken;
   if (!token) return res.status(401).json({ error: 'Sin token de Gmail. Cerrá sesion y volvé a entrar.' });
   try {
     // Buscar IDs
@@ -918,7 +907,7 @@ function sortAttachments(adjuntos) {
 
 app.get('/api/gmail/message/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const token = req.user?.accessToken;
+  const token = req.user.accessToken;
   if (!token) return res.status(401).json({ error: 'Sin token de Gmail.' });
   try {
     // Usar format=full pero con manejo de mails grandes
@@ -980,10 +969,10 @@ app.get('/api/gmail/search', requireAuth, async (req, res) => {
   res.status(501).json({ error: 'Gmail directo requiere configuracion adicional. Usa la opcion "Pegar correo".' });
 });
 
-// ─── Estáticos protegidos ─────────────────────────────────────────────────────
+// ─── Estaticos protegidos ─────────────────────────────────────────────────────
 app.use(requireAuth, express.static(path.join(__dirname, 'public')));
 
 app.listen(PORT, () => {
   console.log(`DatStudio en http://localhost:${PORT}`);
-  if (process.env.ALLOWED_DOMAIN) console.log(`Dominio permitido: @${process.env.ALLOWED_DOMAIN}`);
+  if (ALLOWED_DOMAIN) console.log(`Dominio permitido: @${ALLOWED_DOMAIN}`);
 });
