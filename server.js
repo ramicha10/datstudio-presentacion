@@ -635,7 +635,10 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
     try { clasificacion = JSON.parse((routerOut.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch(e) { clasificacion = { resumen: routerOut }; }
-    send('progress', { agente: 'Premiar', estado: 'completo', data: clasificacion });
+    const resumenRouter = clasificacion.resumen
+      ? `**Tipo:** ${clasificacion.tipo || '—'} | **Urgencia:** ${clasificacion.urgencia || '—'}\n**Tomador:** ${clasificacion.partes?.tomador || '—'} | **Riesgo:** ${clasificacion.partes?.riesgo || '—'}\n**Resumen:** ${clasificacion.resumen}`
+      : routerOut;
+    send('progress', { agente: 'Premiar', estado: 'completo', output: resumenRouter });
 
     // Consultar cupos en Soter con los datos que extrajo el Router
     const tomador = clasificacion?.partes?.tomador || null;
@@ -666,7 +669,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n' + cuposBlock, 800);
-    send('progress', { agente: 'Suscriptor', estado: 'completo' });
+    send('progress', { agente: 'Suscriptor', estado: 'completo', output: tecnicoOut });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
@@ -674,7 +677,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '\n\n=== CLASIFICACION ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n=== ANALISIS TECNICO ===\n' + tecnicoOut +
       '\n\n' + cobranzasBlock, 1000);
-    send('progress', { agente: 'Operativo', estado: 'completo' });
+    send('progress', { agente: 'Operativo', estado: 'completo', output: operativoOut });
 
     send('progress', { agente: 'Validador', estado: 'procesando' });
     const validadorOut = await callAgent(BUSINESS_AGENTS.validador,
