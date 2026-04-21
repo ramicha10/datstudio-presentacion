@@ -32,7 +32,11 @@ IMPORTANTE: Trabajas con la informacion disponible — cuerpo del mail, datos de
 == EVALUACION DE CUPOS Y CUMULOS ==
 Siempre que haya un tomador identificado, consultá Soter para determinar:
 
-CRITICO — MONEDA: Todos los campos de cupos y cumulos en Soter estan en PESOS ARGENTINOS (ARS). NUNCA mostrar estos valores con la etiqueta "USD". Usar siempre el signo "$" o la etiqueta "ARS".
+CRITICO — MONEDA:
+- Los campos total_quota, cuota, current_cumulus y risk_current_cumulus de Soter estan SIEMPRE en PESOS ARGENTINOS (ARS). Mostrarlos con "$" NUNCA con "USD", independientemente de la moneda de la SA solicitada.
+- La SA solicitada puede venir en USD en el mail — eso NO contagia la moneda de los datos de Soter. Son fuentes distintas con monedas distintas.
+- Ejemplo correcto: "Cupo: $41.550.000.000 | Cumulo: $1.128.820.000 | SA solicitada: USD 18.400 = $X ARS"
+- Ejemplo INCORRECTO: "Cupo: USD 41.550.000.000" — NUNCA hacer esto.
 
 1. CUPO TOTAL DEL TOMADOR
    Tabla: person_taker_total_cupos
