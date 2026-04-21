@@ -1,24 +1,4 @@
 require('dotenv').config();
-
-// Polyfill DOMMatrix para pdfjs-dist en Node.js
-if (typeof globalThis.DOMMatrix === 'undefined') {
-  globalThis.DOMMatrix = class DOMMatrix {
-    constructor() {
-      this.a=1;this.b=0;this.c=0;this.d=1;this.e=0;this.f=0;
-      this.m11=1;this.m12=0;this.m13=0;this.m14=0;
-      this.m21=0;this.m22=1;this.m23=0;this.m24=0;
-      this.m31=0;this.m32=0;this.m33=1;this.m34=0;
-      this.m41=0;this.m42=0;this.m43=0;this.m44=1;
-      this.is2D=true;this.isIdentity=true;
-    }
-    multiply(){ return this; }
-    inverse(){ return this; }
-    translate(){ return this; }
-    scale(){ return this; }
-    rotate(){ return this; }
-    transformPoint(p){ return p||{x:0,y:0,z:0,w:1}; }
-  };
-}
 const { ORACLE_INTERPRETER_SYSTEM } = require('./oracle_system');
 const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system');
 // pdf-parse removed — using pdfjs-dist directly (avoids DOMMatrix crash in serverless)
@@ -69,7 +49,6 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.set('trust proxy', 1);
 app.use(express.json());
 app.use(session({
   secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
@@ -551,24 +530,20 @@ async function fetchCuposData(tomadorNombre, tomadorCuit, riesgoNombre) {
       resultado.cupo_riesgo = cupoRiesgo.rows.length ? parseFloat(cupoRiesgo.rows[0].cuota) : null;
     }
 
-    // 6. Cúmulo actual total (desde cumulus_takers — current_cumulus en policies es NULL)
-    const cumuloTotalQ = await soter.query(
-      `SELECT current_cumulus FROM cumulus_takers
-       WHERE person_id = $1
-       ORDER BY id DESC LIMIT 1`,
-      [personId]);
-    resultado.cumulo_total = cumuloTotalQ.rows.length ? parseFloat(cumuloTotalQ.rows[0].current_cumulus) || 0 : 0;
-
-    // Cúmulo por riesgo específico
-    if (resultado.riesgo_id) {
-      const cumuloRiesgoQ = await soter.query(
-        `SELECT current_risk_cumulus FROM cumulus_takers
-         WHERE person_id = $1 AND risk_id = $2
-         ORDER BY id DESC LIMIT 1`,
-        [personId, resultado.riesgo_id]);
-      resultado.cumulo_riesgo = cumuloRiesgoQ.rows.length ? parseFloat(cumuloRiesgoQ.rows[0].current_risk_cumulus) || 0 : 0;
-    } else {
-      resultado.cumulo_riesgo = 0;
+    // 6. Cúmulo actual total y por riesgo (desde policies vigentes)
+    const cumuloQ = await soter.query(
+      `SELECT MAX(current_cumulus) as cumulo_total,
+              MAX(risk_current_cumulus) as cumulo_riesgo
+       FROM policies
+       WHERE taker_id = $1
+         AND endorsement_type_id = 1 AND sequence_number = 0
+         AND state IN ('approved','verified','billed','open')
+         AND canceled_at IS NULL
+         AND ($2::integer IS NULL OR risk_id = $2)`,
+      [personId, resultado.riesgo_id || null]);
+    if (cumuloQ.rows.length) {
+      resultado.cumulo_total = parseFloat(cumuloQ.rows[0].cumulo_total) || 0;
+      resultado.cumulo_riesgo = parseFloat(cumuloQ.rows[0].cumulo_riesgo) || 0;
     }
 
     return resultado;
@@ -585,12 +560,12 @@ function formatCuposBlock(cupos, saUSD) {
     return `=== DATOS DE CUPOS Y CUMULOS (Soter) ===
 TOMADOR NO ENCONTRADO EN SOTER: ${motivo}
 → ASUMIR: TOMADOR NUEVO / PRIMER NEGOCIO. Aplicar límites de "Primer Negocio" de la tabla de emisión automática.
-→ Cúmulo actual: $0 (sin historial). Cupo total: sin asignar aún.
+→ Cúmulo actual: USD 0 (sin historial). Cupo total: sin asignar aún.
 → Dictaminá directamente con los límites de primer negocio. NO pidas verificación manual ni bloquees el caso por falta de CUIT.
 → Si el CUIT es necesario para emitir en Soter, indicarlo como condición de emisión (no como bloqueo del dictamen).`;
   }
 
-  const fmt = (v) => v != null ? `$${Number(v).toLocaleString('es-AR')}` : 'Sin asignar';
+  const fmt = (v) => v != null ? `USD ${Number(v).toLocaleString('es-AR')}` : 'Sin asignar';
   const dispTotal = cupos.cupo_total != null && cupos.cumulo_total != null
     ? cupos.cupo_total - cupos.cumulo_total : null;
   const dispRiesgo = cupos.cupo_riesgo != null && cupos.cumulo_riesgo != null
@@ -630,15 +605,12 @@ app.post('/api/business', requireAuth, async (req, res) => {
   try {
     const casoTruncado = caso.slice(0, 12000); // max 12K chars por caso
 
-    send('progress', { agente: 'Premiar', estado: 'procesando' });
+    send('progress', { agente: 'Router', estado: 'procesando' });
     const routerOut = await callAgent(BUSINESS_AGENTS.router,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
     try { clasificacion = JSON.parse((routerOut.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch(e) { clasificacion = { resumen: routerOut }; }
-    const resumenRouter = clasificacion.resumen
-      ? `**Tipo:** ${clasificacion.tipo || '—'} | **Urgencia:** ${clasificacion.urgencia || '—'}\n**Tomador:** ${clasificacion.partes?.tomador || '—'} | **Riesgo:** ${clasificacion.partes?.riesgo || '—'}\n**Resumen:** ${clasificacion.resumen}`
-      : routerOut;
-    send('progress', { agente: 'Premiar', estado: 'completo', output: resumenRouter });
+    send('progress', { agente: 'Router', estado: 'completo', data: clasificacion });
 
     // Consultar cupos en Soter con los datos que extrajo el Router
     const tomador = clasificacion?.partes?.tomador || null;
@@ -664,12 +636,12 @@ app.post('/api/business', requireAuth, async (req, res) => {
     console.log('[BUSINESS] Cupos fetched:', JSON.stringify(cuposData));
     console.log('[BUSINESS] Cobranzas fetched:', JSON.stringify(cobranzasData));
 
-    send('progress', { agente: 'Suscriptor', estado: 'procesando' });
+    send('progress', { agente: 'Tecnico', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n' + cuposBlock, 800);
-    send('progress', { agente: 'Suscriptor', estado: 'completo', output: tecnicoOut });
+    send('progress', { agente: 'Tecnico', estado: 'completo' });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
@@ -677,7 +649,7 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '\n\n=== CLASIFICACION ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n=== ANALISIS TECNICO ===\n' + tecnicoOut +
       '\n\n' + cobranzasBlock, 1000);
-    send('progress', { agente: 'Operativo', estado: 'completo', output: operativoOut });
+    send('progress', { agente: 'Operativo', estado: 'completo' });
 
     send('progress', { agente: 'Validador', estado: 'procesando' });
     const validadorOut = await callAgent(BUSINESS_AGENTS.validador,

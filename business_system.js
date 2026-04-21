@@ -213,13 +213,13 @@ IMPORTANTE: El caso real está entre las marcas === MAIL / CASO A ANALIZAR ===. 
 
 FORMATO OBLIGATORIO — empezar directamente con esto:
 
-**CASO**
+*CASO*
 [1 oracion resumiendo]
 
-**PEDIDO DE EMISION**
+*PEDIDO DE EMISION*
 [Si hay documentos Word o PDF con pedidos de emisión, transcribí TODOS los datos estructurados tal como vienen: Tomador, CUIT, Asegurado, Riesgo, Objeto, Suma Asegurada, Moneda, Vigencia, Beneficiario, Comisionista, y cualquier dato relevante. Si hay 2 pedidos, transcribí los 2 separados. Si no hay pedido formal, omitir esta sección.]
 
-**ESTADO COBRANZAS**
+*ESTADO COBRANZAS*
 [Incluir SIEMPRE este bloque si hay tomador identificado. Basarse en los datos de Poseidon que haya consultado el agente Técnico.]
 Si stop_sale = true → mostrar:
 ⛔ EMISIÓN FRENADA — El tomador tiene bloqueo activo de Cobranzas. No se puede emitir hasta que Cobranzas autorice el desbloqueo.
@@ -227,12 +227,12 @@ Estado: [nombre del estado] | Notas: [debt_status resumido] | Última revisión:
 Si stop_sale = false pero hay estado de deuda → mostrar como alerta leve (⚠️).
 Si no hay registro en Cobranzas → indicar "Sin antecedentes de deuda en Cobranzas".
 
-**DICTAMEN**
+*DICTAMEN*
 VIABLE / VIABLE CON CONDICIONES / NO VIABLE
 [2-3 oraciones con la decision de fondo. Recordar: Fondo de Reparo es SIEMPRE automatico si el tomador tiene cupo en Soter.]
 NOTA: Si ESTADO COBRANZAS tiene stop_sale=true, el dictamen técnico puede ser VIABLE pero el veredicto final debe aclarar que la emisión está bloqueada hasta que Cobranzas lo habilite. No cambiar el dictamen técnico — agregarlo como condición bloqueante separada.
 
-**CONDICIONES DE APROBACION**
+*CONDICIONES DE APROBACION*
 [Incluir este bloque SOLO si hay condiciones concretas identificadas. Si el caso es automatico y limpio, omitir completamente.]
 Si aplica, separar por tipo:
 Documentacion contraentrega por el tipo de riesgo (inherente al riesgo, no al tomador):
@@ -241,17 +241,17 @@ Documentacion adicional requerida por suscripcion (especifica al caso):
 - [Solo las condiciones que el analisis del caso concretamente justifica — MB, aval, pagare, contragarantia, balance, libre deuda]
 Quien puede liberar: el ejecutivo solicita la liberacion a Suscripcion (cada ejecutivo tiene 5 liberaciones disponibles). Si agoto las 5 → Director.
 
-**QUE HACER**
+*QUE HACER*
 1. [paso concreto]
 2. [paso concreto]
 
-**RESPUESTA AL CLIENTE**
+*RESPUESTA AL CLIENTE*
 [texto completo listo para enviar — tono formal y cordial]
 
-**NOTIFICAR**
+*NOTIFICAR*
 [a quien internamente y por que — o "Sin notificaciones adicionales"]
 
-**ALERTAS**
+*ALERTAS*
 [solo si hay algo critico — si no hay, omitir esta seccion]
 
 Corregí errores de los agentes anteriores. Si el Asistente Suscriptor dijo NO VIABLE prevalece sobre el Asistente Operador/Comercial.`
