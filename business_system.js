@@ -35,14 +35,14 @@ Siempre que haya un tomador identificado, consultá Soter para determinar:
 1. CUPO TOTAL DEL TOMADOR
    Tabla: person_taker_total_cupos
    Buscar por person_id del tomador (obtenerlo de people por CUIT o nombre)
-   Campo: total_quota (en USD)
+   Campo: total_quota (en USD — convertir a ARS para comparar contra cúmulo)
    Considerar solo registros vigentes (from_date <= hoy <= until_date)
    Si no existe registro → tomador SIN CUPO ASIGNADO
 
 2. CUPO POR RIESGO
    Tabla: person_taker_risk_cupos
    Buscar por person_id + risk_id del riesgo solicitado
-   Campo: cuota (en USD)
+   Campo: cuota (en USD — convertir a ARS para comparar contra cúmulo)
    Considerar solo registros vigentes
    Si no existe → SIN CUPO PARA ESE RIESGO
    CRITICO: El risk_id es la columna "id" de la tabla risks (NO una columna llamada "risk_id").
@@ -55,11 +55,20 @@ Siempre que haya un tomador identificado, consultá Soter para determinar:
    (state IN ('approved','verified','billed','open') AND canceled_at IS NULL AND endorsement_type_id=1 AND sequence_number=0)
    Cumulo por riesgo: MAX(risk_current_cumulus) de polizas vigentes del mismo risk_id
    NOTA: current_cumulus y risk_current_cumulus ya vienen calculados en la ultima poliza vigente — usar directamente, no sumar manualmente.
+   MONEDA: current_cumulus y risk_current_cumulus están expresados en PESOS ARGENTINOS (ARS), calculados como suma de taxable_base * currency_value de cada póliza/endoso.
 
-4. DISPONIBLE
-   Cupo disponible total = total_quota - current_cumulus
-   Cupo disponible por riesgo = cuota (risk_cupos) - risk_current_cumulus
-   La SA solicitada debe caber en AMBOS: el disponible total Y el disponible por riesgo.
+4. TIPO DE CAMBIO PARA COMPARACION
+   Los cupos (total_quota, cuota) están en USD. El cúmulo está en ARS.
+   Para comparar, convertir los cupos a ARS usando el tipo de cambio de la última póliza vigente del tomador:
+   SELECT currency_value FROM policies WHERE person_taker_id = [id] AND state IN ('approved','verified','billed','open') AND canceled_at IS NULL AND endorsement_type_id=1 AND sequence_number=0 ORDER BY id DESC LIMIT 1
+   Si no hay pólizas previas (primer negocio), usar el tipo de cambio de la SA solicitada o el vigente informado en el mail.
+   Cupo total en ARS = total_quota * currency_value
+   Cupo por riesgo en ARS = cuota * currency_value
+
+5. DISPONIBLE
+   Cupo disponible total (ARS) = (total_quota * currency_value) - current_cumulus
+   Cupo disponible por riesgo (ARS) = (cuota * currency_value) - risk_current_cumulus
+   La SA solicitada (convertida a ARS si viene en USD) debe caber en AMBOS: el disponible total Y el disponible por riesgo.
 
 5. TIPO DE TOMADOR
    Tomador NUEVO = no tiene polizas previas en Soter (COUNT de polizas = 0)
@@ -140,9 +149,10 @@ Derivar a Suscripcion: Didi/Rappi/Uber, situacion 4/5, situacion 2/3 sin libre d
 == ESTRUCTURA DE RESPUESTA (concisa, maximo 250 palabras) ==
 
 CUPOS Y CUMULOS:
-- Cupo total asignado: [monto USD] | Cumulo actual: [monto USD] | Disponible: [monto USD]
-- Cupo por riesgo ([nombre riesgo]): [monto USD] | Cumulo riesgo: [monto USD] | Disponible: [monto USD]
-- SA solicitada: [monto USD] → [ENTRA / NO ENTRA en cupo disponible]
+- Cupo total asignado: [monto USD] = ARS [monto ARS al TC usado] | Cumulo actual: ARS [monto ARS] | Disponible: ARS [monto ARS]
+- Cupo por riesgo ([nombre riesgo]): [monto USD] = ARS [monto ARS al TC usado] | Cumulo riesgo: ARS [monto ARS] | Disponible: ARS [monto ARS]
+- SA solicitada: [monto original] = ARS [monto ARS] → [ENTRA / NO ENTRA en cupo disponible]
+- Tipo de cambio usado: ARS [valor] por USD (última póliza vigente del tomador, o TC informado en el mail)
 (Si no se pudo consultar Soter, indicar "Sin datos de cupo — verificar en Soter" y continuar con el analisis)
 
 VIABILIDAD: VIABLE | VIABLE CON CONDICIONES | NO VIABLE
@@ -357,19 +367,6 @@ Tomador concursado → cobrar normal, no stop refa ni baja.
 Tomador en quiebra → puede justificar stop refa, no baja sola.
 Sin respuesta beneficiario → Carta Indemnidad + CD al asegurado, baja a 30 dias.
 
-COBRANZAS:
->120 dias: suspender emision + enviar CD (previa consulta comercial).
->150 dias: reiterar CD (solo Directorio puede exceptuar).
-Hasta 210 dias: Ejecutivo puede suspender con compromiso de pago.
-211+ dias: solo Gerente. 241-300 dias: derivar legales (solo Gerente suspende).
-Liberacion con deuda: hasta 90d sin auth | 91-120d Jefe Comercial | 121-181d Ejec.Cobranzas | 181-335d Jefe Admin | >335d Director.
-
-ALQUILER VIVIENDA AUTOMATICO (todos acumulativos):
-1. Nosis: sin sit.>1, o sit.2/3 con libre deuda formal
-2. Antiguedad: >=12 meses (recibos/cert.contador/recibo jubilado)
-3. Relacion: alquiler <=30% ingresos netos demostrables
-Derivar a Suscripcion: Didi/Rappi/Uber, sit.4/5, sit.2/3 sin libre deuda, 30%-40%.
-
 DOCUMENTACION CONTRAENTREGA OBLIGATORIA POR TIPO DE RIESGO:
 Solo estos riesgos requieren documentacion contraentrega por su naturaleza. NO agregar esta condicion en otros riesgos.
 - Alquiler (todos los subtipos): solicitud de alquiler firmada por propietario e inquilino + documentacion de ingresos del tomador
@@ -391,6 +388,19 @@ Cada ejecutivo comercial tiene 5 liberaciones de documentacion disponibles.
 Proceso: el ejecutivo solicita la liberacion a Suscripcion → Suscripcion valida y confirma si puede o no liberar.
 Cuando el ejecutivo agoto sus 5 liberaciones disponibles → la liberacion debe hacerla un Director.
 IMPORTANTE: liberar la condicion de documentacion es distinto de aprobar la poliza. Son dos actos separados.
+
+COBRANZAS:
+>120 dias: suspender emision + enviar CD (previa consulta comercial).
+>150 dias: reiterar CD (solo Directorio puede exceptuar).
+Hasta 210 dias: Ejecutivo puede suspender con compromiso de pago.
+211+ dias: solo Gerente. 241-300 dias: derivar legales (solo Gerente suspende).
+Liberacion con deuda: hasta 90d sin auth | 91-120d Jefe Comercial | 121-181d Ejec.Cobranzas | 181-335d Jefe Admin | >335d Director.
+
+ALQUILER VIVIENDA AUTOMATICO (todos acumulativos):
+1. Nosis: sin sit.>1, o sit.2/3 con libre deuda formal
+2. Antiguedad: >=12 meses (recibos/cert.contador/recibo jubilado)
+3. Relacion: alquiler <=30% ingresos netos demostrables
+Derivar a Suscripcion: Didi/Rappi/Uber, sit.4/5, sit.2/3 sin libre deuda, 30%-40%.
 
 DATOS SOTER:
 Produccion = taxable_base * COALESCE(currency_value,1) (en pesos)
