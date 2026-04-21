@@ -49,6 +49,7 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(session({
   secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false,
