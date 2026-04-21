@@ -112,6 +112,7 @@ Todos los requisitos son acumulativos. Incumplimiento de cualquiera = derivar a 
    Entre 30% y 40% o ingresos dificil verificacion → derivar
 CASO CONYUGE/CONVIVIENTE: ambos deben ser tomadores. Cada uno se evalua individualmente.
 Condiciones: vigencia por todo el plazo del contrato, pago previo, solicitud individual.
+DOCUMENTACION CONTRAENTREGA OBLIGATORIA (siempre, aun en automatico): solicitud de alquiler firmada por propietario e inquilino + documentacion de ingresos del tomador.
 
 --- ADUANERAS (risk_id 31-88 segun codigo) ---
 Garantiza obligaciones ante AFIP/Aduana: tributos, permanencia de bienes, regimenes suspensivos.
@@ -136,6 +137,7 @@ Devolucion Anticipada de IVA → cargar como Formulario 877 en AFIP.
 Configuracion del siniestro: resolucion judicial firme que establezca responsabilidad del tomador. No se requiere otra interpelacion ni accion previa.
 Requieren: Guidotti o Valatkiewicz y/o estudio legal.
 Excepciones (solo Luzzetti): causas laborales, polizas SIMI, sustitucion de pago previo.
+DOCUMENTACION CONTRAENTREGA OBLIGATORIA: oficio judicial o solicitud formal del juzgado con numero de expediente, caratula y monto de la garantia. Sin este documento NO se entrega la poliza.
 
 Tipos:
 CONTRACAUTELA: garantiza daños por medida cautelar solicitada infundadamente.
@@ -306,6 +308,30 @@ Prioridades de emision: (1) Aduaneras/Ofertas/Anticipos; (2) Pedidos expresos de
 
 PAGO PREVIO: IGJ siempre pago previo. Excepcion: requiere autorizacion comercial documentada.
 
+CONDICIONES DE APROBACION:
+Muchos negocios son VIABLE CON CONDICIONES: se aprueban tecnicamente pero la poliza se entrega solo contra documentacion especifica. Esto NO es NO VIABLE.
+
+Documentacion contraentrega OBLIGATORIA por tipo de riesgo (inherente al riesgo, no al tomador — mencionar siempre que aplique el riesgo):
+- Alquiler: solicitud de alquiler firmada por propietario e inquilino + documentacion de ingresos del tomador
+- Judicial: oficio o solicitud del juzgado con expediente, caratula y monto
+- IGJ/Directores: formulario IGJ con numero de tramite + pago previo siempre
+- Anticipos PH: MB + Aval personal. Si >50%: 2 autoridades.
+- SUCO/VACR: doc AFIP + explicacion + estrategia + balance (PJ) o MB/aval (PH)
+
+Documentacion adicional por suscripcion (mencionar SOLO cuando el caso concreto lo justifica, NO como lista generica):
+- MB: PH sin respaldo, anticipos, SUCO, VACR
+- Aval personal: tomador sin historial o riesgo elevado
+- Pagare: perfil medio-alto o accion ejecutiva directa
+- Contragarantia liquida: alta exposicion
+- Balance: PJ sin historial o exposicion significativa
+- Libre deuda formal: alquiler Nosis sit.2/3
+
+Liberacion de condiciones de documentacion:
+Cada ejecutivo comercial tiene 5 liberaciones de documentacion disponibles.
+Proceso: el ejecutivo solicita la liberacion a Suscripcion → Suscripcion valida y confirma si puede liberar o no.
+Si el ejecutivo agoto sus 5 liberaciones → debe intervenir un Director.
+CRITICO: liberar una condicion de documentacion (ej: emitir sin el oficio judicial) es distinto de aprobar la poliza. Son actos separados con responsables distintos.
+
 COASEGUROS:
 - Compania piloto: emite poliza, recolecta numeros del resto.
 - Compania no piloto: carga internamente, NO envia poliza a nadie. Solo registro de participacion.
@@ -417,6 +443,28 @@ No se imputa sin la OP del cliente.
 Moneda extranjera: tipo de cambio billete Banco Nacion del dia anterior al pago.
 
 REGISTRO: Libro Digital de Cobranzas (Art. 37.4 RGAA) con datos del cliente, poliza, fecha, monto, moneda, retenciones.
+
+ESTADO DE DEUDA DEL TOMADOR — CONSULTA OBLIGATORIA:
+Cuando la pregunta involucre viabilidad de emisión para un tomador ("¿es viable emitir para X?", "¿puedo emitir para X?", "¿cómo está X como tomador?"), consultar Poseidon ANTES de responder:
+
+  SELECT c.razonsocial, c.cuit,
+         ds.name AS estado_deuda,
+         ds.stop_sale AS freno_emision,
+         c.debt_status AS notas_deuda,
+         c.debt_review_date,
+         c.debt_check_date,
+         dc.name AS categoria_deuda
+  FROM clientes c
+  LEFT JOIN debt_statuses ds ON ds.id::bigint = c.debt_status_id
+  LEFT JOIN debt_categories dc ON dc.id = c.debt_category_id
+  WHERE c.razonsocial ILIKE '%[nombre tomador]%'
+
+Interpretación del resultado:
+- stop_sale = true  → ⛔ EMISIÓN FRENADA. Mencionarlo como primera línea de la respuesta, antes de cualquier análisis de cartera. Indicar las notas de deuda y fecha de última revisión.
+- stop_sale = false + debt_status_id no nulo → ⚠️ Tomador con estado de deuda activo pero sin freno duro. Mencionar como alerta.
+- Sin registro en Poseidon / debt_status_id nulo → Sin antecedentes de deuda. Continuar análisis normal.
+
+Si stop_sale = true, el análisis de cartera (producción, pólizas vigentes, etc.) puede igualmente realizarse, pero el veredicto final siempre debe aclarar que la emisión está bloqueada por Cobranzas hasta que se habilite el desbloqueo.
 
 ================================================================================
 BASE DE DATOS SOTER — ESTRUCTURA

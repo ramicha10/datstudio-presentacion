@@ -222,7 +222,19 @@ ORDER BY produccion_neta DESC LIMIT 20
 - comprobantes: id, cliente_id, type, fecha, importe, numero, fechavto, letra
   (letra: FA=factura, NC=nota credito, ND=nota debito)
 - comprobante_debts: id, comprobante_id, debt, date_on, is_judicial
-- clientes: id, name, document_number (CUIT)
+- clientes: id, razonsocial, cuit, debt_status_id, debt_status (text notas), debt_review_date, debt_check_date, debt_category_id
+  CRITICO: el campo nombre es "razonsocial" (NO "name"). Buscar SIEMPRE por razonsocial ILIKE.
+- debt_statuses: id, name, stop_sale (boolean) — join con clientes.debt_status_id
+  stop_sale = true → EMISION FRENADA (freno duro de cobranzas)
+- debt_categories: id, name — join con clientes.debt_category_id
+
+CONSULTA DE ESTADO DE DEUDA (usar para preguntas de viabilidad de tomador):
+SELECT c.razonsocial, c.cuit, ds.name AS estado_deuda, ds.stop_sale AS freno_emision,
+       c.debt_status AS notas_deuda, c.debt_review_date, c.debt_check_date, dc.name AS categoria
+FROM clientes c
+LEFT JOIN debt_statuses ds ON ds.id::bigint = c.debt_status_id
+LEFT JOIN debt_categories dc ON dc.id = c.debt_category_id
+WHERE c.razonsocial ILIKE '%[nombre]%'
 
 == ESTRUCTURA HERMES ==
 Sistema de workflow/kanban de Premiar. Gestiona pedidos, emails y tareas por columnas.
@@ -510,6 +522,52 @@ async function fetchCuposData(tomadorNombre, tomadorCuit, riesgoNombre) {
   }
 }
 
+// Consulta Poseidon para estado de cobranzas del tomador
+async function fetchCobranzasData(tomadorNombre) {
+  try {
+    if (!tomadorNombre) return null;
+    const r = await poseidon.query(
+      `SELECT c.razonsocial, c.cuit,
+              ds.name AS estado_deuda,
+              ds.stop_sale AS freno_emision,
+              c.debt_status AS notas_deuda,
+              c.debt_review_date,
+              c.debt_check_date,
+              dc.name AS categoria_deuda
+       FROM clientes c
+       LEFT JOIN debt_statuses ds ON ds.id::bigint = c.debt_status_id
+       LEFT JOIN debt_categories dc ON dc.id = c.debt_category_id
+       WHERE c.razonsocial ILIKE $1
+       LIMIT 1`,
+      ['%' + tomadorNombre + '%']
+    );
+    if (!r.rows.length) return { encontrado: false };
+    return { encontrado: true, ...r.rows[0] };
+  } catch(e) {
+    console.error('[fetchCobranzasData] Error:', e.message);
+    return { error: e.message };
+  }
+}
+
+function formatCobranzasBlock(cobranzas) {
+  const SEP = '\n';
+  if (!cobranzas) return '=== ESTADO COBRANZAS ===' + SEP + 'Sin datos (tomador no identificado).';
+  if (cobranzas.error) return '=== ESTADO COBRANZAS ===' + SEP + 'Error consultando Poseidon: ' + cobranzas.error;
+  if (!cobranzas.encontrado) return '=== ESTADO COBRANZAS ===' + SEP + 'Sin registro en Poseidon — sin antecedentes de deuda.';
+  const freno = cobranzas.freno_emision;
+  const icono = freno ? '⛔' : (cobranzas.estado_deuda ? '⚠️' : '✅');
+  const lineas = [
+    '=== ESTADO COBRANZAS (Poseidon) ===',
+    icono + ' Estado: ' + (cobranzas.estado_deuda || 'Sin estado de deuda'),
+    'Freno de emisión: ' + (freno ? 'SÍ — EMISIÓN BLOQUEADA' : 'No'),
+  ];
+  if (cobranzas.categoria_deuda) lineas.push('Categoría: ' + cobranzas.categoria_deuda);
+  if (cobranzas.debt_review_date) lineas.push('Última revisión: ' + String(cobranzas.debt_review_date).slice(0,10));
+  if (cobranzas.notas_deuda) lineas.push('Notas: ' + cobranzas.notas_deuda.slice(0, 400));
+  if (freno) lineas.push('→ EMISIÓN BLOQUEADA POR COBRANZAS. El análisis técnico continúa. El Validador debe reflejar este bloqueo en el veredicto final.');
+  return lineas.join(SEP);
+}
+
 // Formatea el bloque de cupos para inyectar al Técnico
 function formatCuposBlock(cupos, saUSD) {
   if (!cupos || cupos.error) {
@@ -584,9 +642,14 @@ app.post('/api/business', requireAuth, async (req, res) => {
       const num = parseFloat(montoStr.replace(/[^\d.]/g, ''));
       if (!isNaN(num)) saUSD = moneda === 'USD' ? num : null;
     }
-    const cuposData = await fetchCuposData(tomador, cuit, riesgo);
+    const [cuposData, cobranzasData] = await Promise.all([
+      fetchCuposData(tomador, cuit, riesgo),
+      fetchCobranzasData(tomador)
+    ]);
     const cuposBlock = formatCuposBlock(cuposData, saUSD);
+    const cobranzasBlock = formatCobranzasBlock(cobranzasData);
     console.log('[BUSINESS] Cupos fetched:', JSON.stringify(cuposData));
+    console.log('[BUSINESS] Cobranzas fetched:', JSON.stringify(cobranzasData));
 
     send('progress', { agente: 'Suscriptor', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
@@ -599,7 +662,8 @@ app.post('/api/business', requireAuth, async (req, res) => {
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION ===\n' + JSON.stringify(clasificacion, null, 2) +
-      '\n\n=== ANALISIS TECNICO ===\n' + tecnicoOut, 1000);
+      '\n\n=== ANALISIS TECNICO ===\n' + tecnicoOut +
+      '\n\n' + cobranzasBlock, 1000);
     send('progress', { agente: 'Operativo', estado: 'completo', output: operativoOut });
 
     send('progress', { agente: 'Validador', estado: 'procesando' });
@@ -607,7 +671,8 @@ app.post('/api/business', requireAuth, async (req, res) => {
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n=== TECNICO ===\n' + tecnicoOut +
-      '\n\n=== OPERATIVO ===\n' + operativoOut, 1500);
+      '\n\n=== OPERATIVO ===\n' + operativoOut +
+      '\n\n' + cobranzasBlock, 1500);
     send('progress', { agente: 'Validador', estado: 'completo', output: validadorOut });
 
     send('done', { resultado: validadorOut, clasificacion });
