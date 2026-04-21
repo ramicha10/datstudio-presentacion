@@ -458,9 +458,9 @@ async function analizarCaso(){
           var d = JSON.parse(dataMatch[1]);
           if(ev==='progress'){
             setAgentStatus(d.agente, d.estado);
-            if(d.estado==='completo' && d.output){
-              appendAgentMsg(d.agente, d.output);
-            }
+          } else if(ev==='done'){
+            setAgentStatus('Validador','completo');
+            appendAgentMsg('Validador', d.resultado);
           } else if(ev==='error'){ errorEl.innerHTML='<div class="error-msg">'+escHtml(d.mensaje)+'</div>'; }
         } catch(e){}
       }

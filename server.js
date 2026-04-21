@@ -1,4 +1,24 @@
 require('dotenv').config();
+
+// Polyfill DOMMatrix para pdfjs-dist en Node.js
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  globalThis.DOMMatrix = class DOMMatrix {
+    constructor() {
+      this.a=1;this.b=0;this.c=0;this.d=1;this.e=0;this.f=0;
+      this.m11=1;this.m12=0;this.m13=0;this.m14=0;
+      this.m21=0;this.m22=1;this.m23=0;this.m24=0;
+      this.m31=0;this.m32=0;this.m33=1;this.m34=0;
+      this.m41=0;this.m42=0;this.m43=0;this.m44=1;
+      this.is2D=true;this.isIdentity=true;
+    }
+    multiply(){ return this; }
+    inverse(){ return this; }
+    translate(){ return this; }
+    scale(){ return this; }
+    rotate(){ return this; }
+    transformPoint(p){ return p||{x:0,y:0,z:0,w:1}; }
+  };
+}
 const { ORACLE_INTERPRETER_SYSTEM } = require('./oracle_system');
 const { BUSINESS_AGENTS, BUSINESS_SKILL_CONTEXT } = require('./business_system');
 // pdf-parse removed — using pdfjs-dist directly (avoids DOMMatrix crash in serverless)
@@ -610,12 +630,12 @@ app.post('/api/business', requireAuth, async (req, res) => {
   try {
     const casoTruncado = caso.slice(0, 12000); // max 12K chars por caso
 
-    send('progress', { agente: 'Router', estado: 'procesando' });
+    send('progress', { agente: 'Premiar', estado: 'procesando' });
     const routerOut = await callAgent(BUSINESS_AGENTS.router,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado, 500);
     let clasificacion = {};
     try { clasificacion = JSON.parse((routerOut.match(/\{[\s\S]*\}/) || ['{}'])[0]); } catch(e) { clasificacion = { resumen: routerOut }; }
-    send('progress', { agente: 'Router', estado: 'completo', data: clasificacion });
+    send('progress', { agente: 'Premiar', estado: 'completo', data: clasificacion });
 
     // Consultar cupos en Soter con los datos que extrajo el Router
     const tomador = clasificacion?.partes?.tomador || null;
@@ -641,12 +661,12 @@ app.post('/api/business', requireAuth, async (req, res) => {
     console.log('[BUSINESS] Cupos fetched:', JSON.stringify(cuposData));
     console.log('[BUSINESS] Cobranzas fetched:', JSON.stringify(cobranzasData));
 
-    send('progress', { agente: 'Tecnico', estado: 'procesando' });
+    send('progress', { agente: 'Suscriptor', estado: 'procesando' });
     const tecnicoOut = await callAgent(BUSINESS_AGENTS.tecnico,
       '=== MAIL / CASO A ANALIZAR ===\n' + casoTruncado +
       '\n\n=== CLASIFICACION DEL ROUTER ===\n' + JSON.stringify(clasificacion, null, 2) +
       '\n\n' + cuposBlock, 800);
-    send('progress', { agente: 'Tecnico', estado: 'completo' });
+    send('progress', { agente: 'Suscriptor', estado: 'completo' });
 
     send('progress', { agente: 'Operativo', estado: 'procesando' });
     const operativoOut = await callAgent(BUSINESS_AGENTS.operativo,
